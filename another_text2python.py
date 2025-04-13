@@ -13,7 +13,13 @@ st.markdown("""
 Transform affirmations into **subliminal audio fields** with high-speed speech, optional background music, whisper layering, Solfeggio frequencies, and more.
 """)
 
+# 1. Declare a flag before the form
+generated_audio = False
+output_path = ""
+session_data = {}
+file_name = "subliminal.wav"  # default
 pro_mode = st.toggle("✨ Enable Pro Mode")
+solfeggio_freq = []
 
 with st.form("subliminal_form"):
     st.subheader("🔤 Affirmation Settings")
@@ -27,6 +33,25 @@ with st.form("subliminal_form"):
     volume_mix = st.slider("🔊 Background Music Volume (relative to voice):", 0, 100, 30)
     whisper_layer = st.checkbox("👻 Add Whisper Layer")
     embed_tones = st.checkbox("🧘 Embed Theta Binaural (4.5Hz)")
+
+    if pro_mode:
+        st.subheader("🧬 Pro Mode: Frequency & Field Customization")
+        solfeggio_options = {
+            None: "None",
+            174: "174 Hz – Pain Relief & Security",
+            285: "285 Hz – Tissue Healing",
+            396: "396 Hz – Liberating Fear & Guilt",
+            417: "417 Hz – Undoing Situations",
+            528: "528 Hz – DNA Repair & Transformation",
+            639: "639 Hz – Connection & Relationships",
+            741: "741 Hz – Awakening Intuition",
+            852: "852 Hz – Returning to Spiritual Order",
+            963: "963 Hz – Pineal Gland Activation & Oneness"
+        }
+        solfeggio_label = st.selectbox("🎶 Add Solfeggio Frequency (Optional)", list(solfeggio_options.values()))
+        solfeggio_freq = [freq for freq, label in solfeggio_options.items() if label == solfeggio_label][0]
+        isochronic = st.checkbox("🌀 Add Isochronic Tones (7.83Hz - Earth/Healing Base)")
+        morphic_field_mode = st.checkbox("🌌 Morphic Field Loop Mode")
 
     submitted = st.form_submit_button("🎧 Generate Subliminal")
 
@@ -60,25 +85,6 @@ with st.form("subliminal_form"):
                     tone_right = Sine(204.5).to_audio_segment(duration=len(voice), volume=-25).pan(1)
                     tone_combined = tone_left.overlay(tone_right)
                     voice = tone_combined.overlay(voice)
-
-                if pro_mode:
-                    st.subheader("🧬 Pro Mode: Frequency & Field Customization")
-                    solfeggio_options = {
-                        None: "None",
-                        174: "174 Hz – Pain Relief & Security",
-                        285: "285 Hz – Tissue Healing",
-                        396: "396 Hz – Liberating Fear & Guilt",
-                        417: "417 Hz – Undoing Situations",
-                        528: "528 Hz – DNA Repair & Transformation",
-                        639: "639 Hz – Connection & Relationships",
-                        741: "741 Hz – Awakening Intuition",
-                        852: "852 Hz – Returning to Spiritual Order",
-                        963: "963 Hz – Pineal Gland Activation & Oneness"
-                    }
-                    solfeggio_label = st.selectbox("🎶 Add Solfeggio Frequency (Optional)", list(solfeggio_options.values()))
-                    solfeggio_freq = [freq for freq, label in solfeggio_options.items() if label == solfeggio_label][0]
-                    isochronic = st.checkbox("🌀 Add Isochronic Tones (7.83Hz - Earth/Healing Base)")
-                    morphic_field_mode = st.checkbox("🌌 Morphic Field Loop Mode")
 
                     if solfeggio_freq:
                         solfeggio = Sine(solfeggio_freq).to_audio_segment(duration=len(voice), volume=-20)
@@ -122,9 +128,11 @@ with st.form("subliminal_form"):
                 }
                 with open(os.path.join("output", "session_config.txt"), "w") as cfg:
                     cfg.write(json.dumps(session_data, indent=4))
+                generated_audio = True
 
-                st.success("✅ Subliminal Generated!")
-                st.audio(output_path)
-                with open(output_path, "rb") as f:
-                    st.download_button("📥 Download WAV", data=f, file_name=file_name, mime="audio/wav")
-                st.download_button("🧾 Download Session Config", data=json.dumps(session_data, indent=4), file_name="session_config.txt", mime="text/plain")
+if generated_audio: 
+    st.success("✅ Subliminal Generated!")
+    st.audio(output_path)
+    with open(output_path, "rb") as f:
+        st.download_button("📥 Download WAV", data=f, file_name=file_name, mime="audio/wav")
+    st.download_button("🧾 Download Session Config", data=json.dumps(session_data, indent=4), file_name="session_config.txt", mime="text/plain")

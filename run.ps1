@@ -2,8 +2,8 @@
 
 # Define paths
 $venvPath = "$env:USERPROFILE\venv"  # Replace with your virtual environment path, e.g., C:\Users\YourUser\venv
-$appPath = ".\another_text2python_beta_v2.py"  # Path to your Python script
-# $appPath = ".\another_text2python.py"  # Path to your Python script
+# $appPath = ".\another_text2python_beta_v2.py"  # Path to your Python script
+$appPath = ".\another_text2python.py"  # Path to your Python script
 
 # Check if virtual environment exists
 if (Test-Path $venvPath) {

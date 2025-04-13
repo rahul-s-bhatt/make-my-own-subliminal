@@ -28,25 +28,6 @@ with st.form("subliminal_form"):
     whisper_layer = st.checkbox("👻 Add Whisper Layer")
     embed_tones = st.checkbox("🧘 Embed Theta Binaural (4.5Hz)")
 
-    if pro_mode:
-        st.subheader("🧬 Pro Mode: Frequency & Field Customization")
-        solfeggio_options = {
-            None: "None",
-            174: "174 Hz – Pain Relief & Security",
-            285: "285 Hz – Tissue Healing",
-            396: "396 Hz – Liberating Fear & Guilt",
-            417: "417 Hz – Undoing Situations",
-            528: "528 Hz – DNA Repair & Transformation",
-            639: "639 Hz – Connection & Relationships",
-            741: "741 Hz – Awakening Intuition",
-            852: "852 Hz – Returning to Spiritual Order",
-            963: "963 Hz – Pineal Gland Activation & Oneness"
-        }
-        solfeggio_label = st.selectbox("🎶 Add Solfeggio Frequency (Optional)", list(solfeggio_options.values()))
-        solfeggio_freq = [freq for freq, label in solfeggio_options.items() if label == solfeggio_label][0]
-        isochronic = st.checkbox("🌀 Add Isochronic Tones (7.83Hz - Earth/Healing Base)")
-        morphic_field_mode = st.checkbox("🌌 Morphic Field Loop Mode")
-
     submitted = st.form_submit_button("🎧 Generate Subliminal")
 
     if submitted:
@@ -81,6 +62,24 @@ with st.form("subliminal_form"):
                     voice = tone_combined.overlay(voice)
 
                 if pro_mode:
+                    st.subheader("🧬 Pro Mode: Frequency & Field Customization")
+                    solfeggio_options = {
+                        None: "None",
+                        174: "174 Hz – Pain Relief & Security",
+                        285: "285 Hz – Tissue Healing",
+                        396: "396 Hz – Liberating Fear & Guilt",
+                        417: "417 Hz – Undoing Situations",
+                        528: "528 Hz – DNA Repair & Transformation",
+                        639: "639 Hz – Connection & Relationships",
+                        741: "741 Hz – Awakening Intuition",
+                        852: "852 Hz – Returning to Spiritual Order",
+                        963: "963 Hz – Pineal Gland Activation & Oneness"
+                    }
+                    solfeggio_label = st.selectbox("🎶 Add Solfeggio Frequency (Optional)", list(solfeggio_options.values()))
+                    solfeggio_freq = [freq for freq, label in solfeggio_options.items() if label == solfeggio_label][0]
+                    isochronic = st.checkbox("🌀 Add Isochronic Tones (7.83Hz - Earth/Healing Base)")
+                    morphic_field_mode = st.checkbox("🌌 Morphic Field Loop Mode")
+
                     if solfeggio_freq:
                         solfeggio = Sine(solfeggio_freq).to_audio_segment(duration=len(voice), volume=-20)
                         voice = voice.overlay(solfeggio)

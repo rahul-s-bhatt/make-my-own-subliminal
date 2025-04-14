@@ -27,22 +27,35 @@ class SubliminalForm:
                 st.subheader("🔤 Affirmation Settings")
                 self.affirmations_text_input = st.text_area(
                     "📝 Enter Your Affirmations:", height=300)
-            self.speed = st.selectbox(
-                "🚀 Choose Speech Speed:", self.playback_speed, index=0)
-            self.affirmations_loop_count = st.slider(
-                "🔁 Repeat Affirmation Track", 1, 20, 1)
-
             with tab2:
                 st.subheader("🎵 Audio Settings")
-
+                self.speed = st.selectbox(
+                    "🚀 Choose Speech Speed:", self.playback_speed, index=0)
+                self.affirmations_loop_count = st.slider(
+                    "🔁 Repeat Affirmation Track", 1, 20, 1)
             with tab3:
                 self.mode_wrapper.initialize_all()
+
             # File name input
             self.output_file_name = st.text_input(
                 "💾 Output File Name:", value="subliminal.wav")
             self.is_submitted = st.form_submit_button("🎧 Generate Subliminal")
 
     def on_submit(self):
+        # with st.sidebar:
+        #     if self.is_submitted:
+        #         num_lines = len(
+        #             self.affirmations_text_input.strip().splitlines())
+        #         estimated_duration = num_lines * 2
+        #         estimated_size_mb = round(
+        #             (estimated_duration * 44100 * 2 * 16 / 8) / (1024**2), 1)
+
+        #         st.info(
+        #             f"🔢 Estimated duration: {estimated_duration//60} min, size: {estimated_size_mb} MB")
+
+        #         if estimated_size_mb > 200:
+        #             st.warning(
+        #                 "⚠️ This may take a while and result in a large file. Consider shortening affirmations.")
         if self.is_submitted:
             if not self.affirmations_text_input.strip():
                 st.warning("Please enter some affirmations first.")

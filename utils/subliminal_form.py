@@ -1,4 +1,5 @@
 import os
+from io import BytesIO
 
 import pyttsx3
 import streamlit as st
@@ -39,23 +40,23 @@ class SubliminalForm:
                     engine.setProperty('rate', int(200 * self.audio_play_speed))
 
                     voices = engine.getProperty('voices')
-                    if voices:
-                        engine.setProperty('voice', voices[0].id)
-                        
-                    os.makedirs("output", exist_ok=True)
-                    voice_path = os.path.join("output", "voice.wav")
-                    engine.save_to_file(self.affirmations_text_input, voice_path)
-                    engine.runAndWait()
+                    engine.setProperty('voice', voices[0].id)
 
-                    voice = AudioSegment.from_wav(voice_path) * self.affirmations_loop_count
+                    # Use BytesIO to store the audio in memory
+                    audio_buffer = BytesIO()
+                    engine.save_to_file(self.affirmations_text_input, audio_buffer)
+                    engine.runAndWait()
+                    audio_buffer.seek(0)  # Go to the beginning of the buffer
+
+                    voice = AudioSegment.from_wav(audio_buffer) * self.affirmations_loop_count
                     voice = self.mode_wrapper.apply_all(voice)
-                    self.generated_audio = True
-    
-    def download(self):
-        if self.generated_audio:
-            st.success("✅ Subliminal Generated!")
-            file_name = st.text_input("💾 Output File Name:", value="subliminal.wav")
-            st.audio(output_path)
-            with open(output_path, "rb") as f:
-                st.download_button("📥 Download WAV", data=f, file_name=file_name, mime="audio/wav")
-            st.download_button("🧾 Download Session Config", data=json.dumps(session_data, indent=4), file_name="session_config.txt", mime="text/plain")
+
+                    # Export the looped audio to the in-memory buffer
+                    output_buffer = BytesIO()
+                    voice.export(output_buffer, format="wav")
+                    output_buffer.seek(0)
+
+                    file_name = "subliminal_audio.wav"
+                    st.success("✅ Subliminal Generated!")
+                    st.audio(output_buffer.getvalue(), format="audio/wav")
+                    st.download_button("📥 Download WAV",data=output_buffer.getvalue(),file_name=file_name,mime="audio/wav",)

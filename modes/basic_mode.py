@@ -9,7 +9,6 @@ from pydub.generators import Sine
 
 class ModeWrapper:
     def __init__(self):
-        st.subheader("🧬 Frequency & Field Customization")
         self.modes = [
             MusicMode(),
             WhisperLayerMode(),

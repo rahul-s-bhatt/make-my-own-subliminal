@@ -19,16 +19,24 @@ class SubliminalForm:
         self.audio_engine = AudioEngine()
 
     def create_form(self):
+        tab1, tab2, tab3 = st.tabs(
+            ["🔤 Affirmations", "🎵 Audio", "🧬 Advanced Modes"])
         with st.form("subliminal_form"):
-            st.subheader("🔤 Affirmation Settings")
-            self.affirmations_text_input = st.text_area(
-                "📝 Enter Your Affirmations:", height=300)
+
+            with tab1:
+                st.subheader("🔤 Affirmation Settings")
+                self.affirmations_text_input = st.text_area(
+                    "📝 Enter Your Affirmations:", height=300)
             self.speed = st.selectbox(
                 "🚀 Choose Speech Speed:", self.playback_speed, index=0)
             self.affirmations_loop_count = st.slider(
                 "🔁 Repeat Affirmation Track", 1, 20, 1)
-            st.subheader("🎵 Audio Settings")
-            self.mode_wrapper.initialize_all()
+
+            with tab2:
+                st.subheader("🎵 Audio Settings")
+
+            with tab3:
+                self.mode_wrapper.initialize_all()
             # File name input
             self.output_file_name = st.text_input(
                 "💾 Output File Name:", value="subliminal.wav")

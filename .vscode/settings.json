@@ -22,7 +22,7 @@
     "editor.codeActionsOnSave": {
         "source.organizeImports.ruff": "always"
     },
-    "ruff.fixAll": true,
-    "ruff.lint.enable": true,
-    "ruff.organizeImports": true
+    // "ruff.fixAll": true,
+    // "ruff.lint.enable": true,
+    // "ruff.organizeImports": true
 }

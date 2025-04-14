@@ -1,20 +1,22 @@
+import os
+import tempfile
 from abc import ABC, abstractmethod
+
+import streamlit as st
 from pydub import AudioSegment
 from pydub.generators import Sine
-import streamlit as st
-import tempfile
-import os
+
 
 class ModeWrapper:
     def __init__(self):
         st.subheader("🧬 Frequency & Field Customization")
         self.modes = [
+            MusicMode(),
             WhisperLayerMode(),
             EmbedTonesMode(),
             SolfeggioMode(),
             IsochronicMode(),
-            MorphicFieldMode(),
-            FrequencyMode()
+            MorphicFieldMode()
         ]
 
     def initialize_all(self):
@@ -36,15 +38,15 @@ class VoiceMode(ABC):
         pass
 
     @abstractmethod
-    def modify_voice(self, voice: AudioSegment):
+    def modify_voice(self, voice: AudioSegment) -> AudioSegment:
         """Modify voice"""
 
 class MusicMode(VoiceMode):
     def __init__(self):
         super().__init__()
-        self.music_file = ""
+        self.volume_mix = 0
     
-    def initialize(self, msg):
+    def initialize(self):
         self.music_file = st.file_uploader("🎼 Upload Background Music (mp3 or wav):", type=["mp3", "wav"])
         self.volume_mix = st.slider("🔊 Background Music Volume (relative to voice):", 0, 100, 30)
 
@@ -57,21 +59,15 @@ class MusicMode(VoiceMode):
 
             music = AudioSegment.from_file(music_path)
             music = music - (100 - self.volume_mix)
-            combined = music.overlay(voice, loop=True)
-        else:
-            combined = voice
-
-        # output_path = os.path.join("output", file_name)
-        # combined.export(output_path, format="wav")
-
-        return combined
+            voice = music.overlay(voice, loop=True)
+        return voice
 
 class WhisperLayerMode(VoiceMode):
     def __init__(self):
         super().__init__()
         self.enabled = False
 
-    def initialize(self, msg):
+    def initialize(self):
         self.enabled = st.checkbox("👻 Add Whisper Layer")
 
     def modify_voice(self, voice: AudioSegment):
@@ -86,7 +82,7 @@ class EmbedTonesMode(VoiceMode):
         super().__init__()
         self.enabled = False
 
-    def initialize(self, msg):
+    def initialize(self):
         self.enabled = st.checkbox("🧘 Embed Theta Binaural (4.5Hz)")
 
     def modify_voice(self, voice):
@@ -102,7 +98,7 @@ class SolfeggioMode(VoiceMode):
         super().__init__()
         self.enabled = False
 
-    def initialize(self, msg):
+    def initialize(self):
         self.solfeggio_freq = []
         self.solfeggio_options = {
             None: "None",
@@ -131,7 +127,7 @@ class IsochronicMode(VoiceMode):
         super().__init__()
         self.enabled = False
 
-    def initialize(self, msg):
+    def initialize(self):
         self.enabled = st.checkbox("🌀 Add Isochronic Tones (7.83Hz - Earth/Healing Base)")
     
     def modify_voice(self, voice):
@@ -146,7 +142,7 @@ class MorphicFieldMode(VoiceMode):
         super().__init__()
         self.enabled = False
         
-    def initialize(self, msg):
+    def initialize(self):
         self.enabled = st.checkbox("🌌 Morphic Field Loop Mode")
         
     def modify_voice(self, voice):

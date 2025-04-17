@@ -11,11 +11,11 @@ class ModeWrapper:
     def __init__(self):
         self.modes = [
             MusicMode(),
-            WhisperLayerMode(),
-            EmbedTonesMode(),
+            # WhisperLayerMode(),
+            # EmbedTonesMode(),
             SolfeggioMode(),
-            IsochronicMode(),
-            MorphicFieldMode()
+            # IsochronicMode(),
+            # MorphicFieldMode()
         ]
 
     def initialize_all(self):

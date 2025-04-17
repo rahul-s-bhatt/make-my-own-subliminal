@@ -1,5 +1,8 @@
 import streamlit as st
-
+import os
+from pydub import AudioSegment
+from streamlit_advanced_audio import audix, WaveSurferOptions
+import tempfile
 from modes.basic_mode import ModeWrapper
 from utils.audio_engine import AudioEngine
 
@@ -19,8 +22,8 @@ class SubliminalForm:
         self.audio_engine = AudioEngine()
 
     def create_form(self):
-        tab1, tab2, tab3 = st.tabs(
-            ["🔤 Affirmations", "🎵 Audio", "🧬 Advanced Modes"])
+        tab1, tab2, tab3, tab4 = st.tabs(
+            ["🔤 Affirmations", "🎵 Audio", "🧬 Advanced Modes", "🎚 Pro Audio Editor"])
         with st.form("subliminal_form"):
 
             with tab1:
@@ -36,10 +39,52 @@ class SubliminalForm:
             with tab3:
                 self.mode_wrapper.initialize_all()
 
+            with tab4:
+                st.markdown("### 🎚 Pro Audio Editor (Beta)")
+                pro_audio_file = st.file_uploader("🎧 Upload Audio for Editing:", type=[
+                                                  "wav", "mp3"], key="pro_editor")
+                if pro_audio_file:
+                    # Save uploaded file to a temporary location
+                    temp_path = os.path.join(
+                        tempfile.gettempdir(), pro_audio_file.name)
+                    with open(temp_path, "wb") as f:
+                        f.write(pro_audio_file.read())
+
+                    # Define waveform styling options
+                    options = WaveSurferOptions(
+                        wave_color="#2B88D9",
+                        progress_color="#b91d47",
+                        height=100,
+                        bar_width=2,
+                        bar_gap=1
+                    )
+
+                    # Display the Audix player
+                    result = audix(temp_path, wavesurfer_options=options)
+
+                    # Display selected region information
+                    if result and result.get("selectedRegion"):
+                        start_trim = result["selectedRegion"]["start"]
+                        end_trim = result["selectedRegion"]["end"]
+                        st.success(
+                            f"Selected range: {round(start_trim, 2)}s to {round(end_trim, 2)}s")
+
+                        if st.button("✂️ Export Trimmed Audio"):
+                            audio = AudioSegment.from_file(temp_path)
+                            trimmed = audio[start_trim * 1000:end_trim * 1000]
+                            export_path = os.path.join(
+                                tempfile.gettempdir(), "trimmed_output.wav")
+                            trimmed.export(export_path, format="wav")
+                            st.audio(export_path)
+                            with open(export_path, "rb") as f:
+                                st.download_button(
+                                    "📥 Download Trimmed WAV", data=f, file_name="trimmed_output.wav", mime="audio/wav")
+
             # File name input
             self.output_file_name = st.text_input(
                 "💾 Output File Name:", value="subliminal.wav")
-            self.is_submitted = st.form_submit_button("🎧 Generate Subliminal")
+            self.is_submitted = st.form_submit_button(
+                "🎧 Generate Subliminal")
 
     def on_submit(self):
         if self.is_submitted:

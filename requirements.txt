@@ -2,3 +2,5 @@ streamlit
 pyttsx3
 pydub
 shutil
+streamlit-advanced-audio
+soundfile

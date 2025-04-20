@@ -2,9 +2,11 @@
 # Pro Subliminal Audio Editor V2 (OOP Refactor - Optimized)
 # ==========================================
 import streamlit as st
+from PIL import Image
 
 # --- Early Config ---
-st.set_page_config(layout="wide", page_title="Pro Subliminal Editor OOP")
+favicon = Image.open(r"assets\favico.png")  # Replace with your favicon file name
+st.set_page_config(layout="wide", page_title="MindMorph - Pro Subliminal Audio Editor", page_icon=favicon)
 
 # --- Imports ---
 import logging
@@ -826,8 +828,8 @@ class UIManager:
               - **Processing**: Can take time.
               - **Format**: Internal 44.1kHz/32f Stereo. Export 16-bit WAV.
               - **Clipping**: Final mix clipped to [-1, 1]. Manage track volumes.
-              - **Logging**: Details in `editor_oop.log`.
               """)
+            #   - **Logging**: Details in `editor_oop.log`.
 
 
 # ==========================================
@@ -893,26 +895,26 @@ class Benchmarker:
 def main():
     """Main function to run the Streamlit application."""
     logger.info("Starting main application function.")
-    st.title("🧠 Create High quality Subliminal Audios")
+    st.title("🧠 MindMorph - Create High Quality Subliminals")
     st.markdown("""Transform affirmations into **subliminal audio fields** with high-speed speech, optional background music, whisper layering, Solfeggio frequencies, and more.""")
     app_state = AppState()
     tts_generator = TTSGenerator()
     ui_manager = UIManager(app_state, tts_generator)
-    benchmarker = Benchmarker(tts_generator)
+    # benchmarker = Benchmarker(tts_generator)
     ui_manager.render_sidebar()
     ui_manager.render_tracks_editor()
     ui_manager.render_master_controls()
     # Benchmarking Section
-    st.divider()
-    with st.expander("⏱️ Run Benchmarks", expanded=False):
-        st.info("Run performance tests. May take time.")
-        bm_words = st.number_input("Words for TTS Benchmark", 100, 20000, 10000, 100)
-        bm_reps = st.number_input("Repetitions", 1, 10, 1, 1)
-        if st.button("Run TTS Benchmark"):
-            benchmarker.benchmark_tts(bm_words, bm_reps)
+    # st.divider()
+    # with st.expander("⏱️ Run Benchmarks", expanded=False):
+    #     st.info("Run performance tests. May take time.")
+    #     bm_words = st.number_input("Words for TTS Benchmark", 100, 20000, 10000, 100)
+    #     bm_reps = st.number_input("Repetitions", 1, 10, 1, 1)
+    #     if st.button("Run TTS Benchmark"):
+    #         benchmarker.benchmark_tts(bm_words, bm_reps)
     ui_manager.render_instructions()
     st.divider()
-    st.caption("Pro Subliminal Audio Editor (OOP) - Built with Streamlit")
+    st.caption("MindMorph - Pro Subliminal Audio Editor")
     logger.info("Reached end of main application function render.")
 
 

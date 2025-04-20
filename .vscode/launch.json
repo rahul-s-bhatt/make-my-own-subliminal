@@ -29,7 +29,7 @@
             "module": "streamlit", // --- ADD THIS LINE --- Run 'python -m streamlit' essentially
             "args": [
                 "run",
-                "main4.py"
+                "main.py"
                 // You can add other Streamlit arguments here if needed, like:
                 // "--server.port", "8501"
             ],

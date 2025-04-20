@@ -893,6 +893,8 @@ class Benchmarker:
 def main():
     """Main function to run the Streamlit application."""
     logger.info("Starting main application function.")
+    st.title("🧠 Create High quality Subliminal Audios")
+    st.markdown("""Transform affirmations into **subliminal audio fields** with high-speed speech, optional background music, whisper layering, Solfeggio frequencies, and more.""")
     app_state = AppState()
     tts_generator = TTSGenerator()
     ui_manager = UIManager(app_state, tts_generator)

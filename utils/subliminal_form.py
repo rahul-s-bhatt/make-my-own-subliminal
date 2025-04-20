@@ -1,90 +1,66 @@
 import streamlit as st
-import os
-from pydub import AudioSegment
-from streamlit_advanced_audio import audix, WaveSurferOptions
-import tempfile
+
 from modes.basic_mode import ModeWrapper
 from utils.audio_engine import AudioEngine
-
-MAX_AFFIRMATIONS = 10000
+from utils.form_util import FormUtil
+from utils.live_mixer import LiveMixer
 
 
 class SubliminalForm:
-    def __init__(self):
-        self.is_submitted = False
-        self.generated_audio = False
+    def __init__(self, mode_wrapper: ModeWrapper, audio_engine: AudioEngine, form_util: FormUtil):
         self.affirmations_text_input = ""
-        self.playback_speed = ["1x", "2x", "3x"]
-        self.audio_play_speed_str = "1x"
-        self.audio_play_speed = 1.0
         self.affirmations_loop_count = 1
-        self.mode_wrapper = ModeWrapper()
-        self.audio_engine = AudioEngine()
+        self.is_submitted = False
+        self.preview_path = None
+        self.output_file_name = "subliminal.wav"
+        self.speechSpeed = "1x"
+        self.playback_speed = ["1x", "2x", "3x"]
+
+        # Object
+        self.mode_wrapper = mode_wrapper
+        self.audio_engine = audio_engine
+        self.form_util = form_util
+
+        # Mix adjustment defaults
+        self.mix_affirmation_speed = 1.0
+        self.mix_affirmation_volume = 100
+        self.mix_frequency_volume = 100
+        self.mix_background_volume = 30
 
     def create_form(self):
-        tab1, tab2, tab3, tab4 = st.tabs(
-            ["🔤 Affirmations", "🎵 Audio", "🧬 Advanced Modes", "🎚 Pro Audio Editor"])
+        tab1, tab2, tab3 = st.tabs(
+            [
+                "🔤 Affirmations",
+                "🧬 Advanced Modes",
+                "🎚 Pro Audio Editor & 🔀 Mix Adjustment",
+            ]
+        )
+
         with st.form("subliminal_form"):
-
+            # Tab 1: Affirmations
             with tab1:
-                st.subheader("🔤 Affirmation Settings")
-                self.affirmations_text_input = st.text_area(
-                    "📝 Enter Your Affirmations:", height=300)
+                st.subheader("✍️ Affirmation Settings")
+                self.affirmations_text_input = st.text_area("📝 Enter Your Affirmations:", height=300)
+                self.speechSpeed = st.selectbox("🚀 Choose Speech Speed:", self.playback_speed, index=0)
+
+                self.audio_play_speed = {"1x": 1.0, "2x": 2.0, "3x": 3.0}[self.speechSpeed]  # type: ignore
+
+                self.affirmations_loop_count = st.slider("🔁 Repeat Affirmation Track", 1, 20, 1)
+
+            # Tab 2: Advanced Modes (other modes also handled by ModeWrapper)
             with tab2:
-                st.subheader("🎵 Audio Settings")
-                self.speed = st.selectbox(
-                    "🚀 Choose Speech Speed:", self.playback_speed, index=0)
-                self.affirmations_loop_count = st.slider(
-                    "🔁 Repeat Affirmation Track", 1, 20, 1)
+                st.subheader("⚙️ Advanced Customization")
+                # self.mode_wrapper.initialize_all()
+
+            # Tab 3: Pro Audio Editor (Preview & Trim) & Mix Adjustment
             with tab3:
-                self.mode_wrapper.initialize_all()
+                st.subheader("🎚 Pro Audio Editor (Beta)")
+                liveMixer = LiveMixer(self.audio_engine, self.affirmations_text_input)
+                liveMixer.render()
 
-            with tab4:
-                st.markdown("### 🎚 Pro Audio Editor (Beta)")
-                pro_audio_file = st.file_uploader("🎧 Upload Audio for Editing:", type=[
-                                                  "wav", "mp3"], key="pro_editor")
-                if pro_audio_file:
-                    # Save uploaded file to a temporary location
-                    temp_path = os.path.join(
-                        tempfile.gettempdir(), pro_audio_file.name)
-                    with open(temp_path, "wb") as f:
-                        f.write(pro_audio_file.read())
-
-                    # Define waveform styling options
-                    options = WaveSurferOptions(
-                        wave_color="#2B88D9",
-                        progress_color="#b91d47",
-                        height=100,
-                        bar_width=2,
-                        bar_gap=1
-                    )
-
-                    # Display the Audix player
-                    result = audix(temp_path, wavesurfer_options=options)
-
-                    # Display selected region information
-                    if result and result.get("selectedRegion"):
-                        start_trim = result["selectedRegion"]["start"]
-                        end_trim = result["selectedRegion"]["end"]
-                        st.success(
-                            f"Selected range: {round(start_trim, 2)}s to {round(end_trim, 2)}s")
-
-                        if st.button("✂️ Export Trimmed Audio"):
-                            audio = AudioSegment.from_file(temp_path)
-                            trimmed = audio[start_trim * 1000:end_trim * 1000]
-                            export_path = os.path.join(
-                                tempfile.gettempdir(), "trimmed_output.wav")
-                            trimmed.export(export_path, format="wav")
-                            st.audio(export_path)
-                            with open(export_path, "rb") as f:
-                                st.download_button(
-                                    "📥 Download Trimmed WAV", data=f, file_name="trimmed_output.wav", mime="audio/wav")
-
-            # File name input
-            self.output_file_name = st.text_input(
-                "💾 Output File Name:", value="subliminal.wav")
-            self.is_submitted = st.form_submit_button(
-                "🎧 Generate Subliminal")
+            # Final generate button
+            # self.output_file_name = st.text_input("💾 Output File Name:", value=self.output_file_name)
+            # self.is_submitted = st.form_submit_button("🎧 Generate Subliminal")
 
     def on_submit(self):
         if self.is_submitted:
@@ -92,86 +68,21 @@ class SubliminalForm:
             self.affirmations_text_input = self.affirmations_text_input.strip()
 
             # --- 1. Basic Validation ---
-            self.pre_processing_validation()
+            self.form_util._pre_processing_validation(self.affirmations_text_input)
 
             # --- 2. Calculate and Display Estimate ---
-            self.calculate_display_estimates()
-
+            self.form_util._calculate_display_estimates(
+                self.affirmations_text_input,
+                self.affirmations_loop_count,
+                self.audio_play_speed,
+            )
             # --- 3. Proceed with Generation ---
             with st.spinner("Generating audio... Please wait."):
-                self.audio_engine.engine_configuration(
-                    self.audio_play_speed)
-                self.audio_engine.generate_tts_to_tempfile(
-                    self.affirmations_text_input)
+                self.audio_engine.engine_configuration(self.audio_play_speed)
+                self.audio_engine.generate_tts_to_tempfile(self.affirmations_text_input)
                 self.audio_engine.process_and_output_audio(
-                    self.mode_wrapper, self.affirmations_text_input, self.affirmations_loop_count, self.output_file_name)
-
-    def pre_processing_validation(self):
-        if not self.affirmations_text_input:
-            st.warning("Please enter some affirmations first.")
-            return  # Stop processing
-
-        lines = self.affirmations_text_input.splitlines()
-        self.affirmations_lines_count = len(lines)
-        if self.affirmations_lines_count > MAX_AFFIRMATIONS:
-            st.error(
-                f"⚠️ Input Limit Exceeded! You entered {self.affirmations_lines_count} lines. "
-                f"Please limit your affirmations to {MAX_AFFIRMATIONS} lines."
-            )
-            return  # Stop processing
-
-    def calculate_display_estimates(self):
-        self.audio_play_speed = {"1x": 1.0, "2x": 2.0, "3x": 3.0}[
-            self.speed]  # type: ignore
-
-        duration_sec, size_mb, num_lines = self.estimate_generation(
-            self.affirmations_text_input,
-            self.audio_play_speed,
-            self.affirmations_loop_count  # Get loop count from instance variable
-        )
-
-        estimate_message = ""
-        if duration_sec > 0:
-            est_minutes = int(duration_sec // 60)
-            est_seconds = int(duration_sec % 60)
-            duration_str = f"{est_minutes} min {est_seconds} sec" if est_minutes > 0 else f"{duration_sec:.1f} sec"
-
-            estimate_message = (
-                f"⚙️ **Estimated Generation:**\n"
-                f"- Duration: ~{duration_str} ({num_lines} lines x {self.affirmations_loop_count} loops @ {self.speed} speed)\n"
-                f"- Size: ~{size_mb} MB (uncompressed WAV)"
-            )
-            st.info(estimate_message)  # Display the estimate
-
-            # Optional: Add a warning for very large estimates
-            if size_mb > 200 or duration_sec > 600:  # e.g., > 200MB or > 10 minutes
-                st.warning(
-                    "⚠️ This may take a significant amount of time and result in a large file.")
-
-    def estimate_generation(self, affirmations_text, speed_multiplier, loop_count):
-        """Calculates estimated duration (sec) and size (MB) for WAV."""
-        lines = affirmations_text.strip().splitlines()
-        num_lines = len(lines)
-        if num_lines == 0:
-            return 0, 0, 0  # duration_sec, size_mb, num_lines
-
-        # --- Estimation Parameters (ADJUST THESE BASED ON YOUR TTS/AUDIO) ---
-        # Average time (in seconds) to speak one line at normal speed
-        avg_sec_per_line_at_1x = 2.0
-        sample_rate = 44100           # Sample rate of the output WAV
-        num_channels = 2              # 1 for mono, 2 for stereo output WAV
-        # Bit depth of the output WAV (usually 16)
-        bits_per_sample = 16
-        # --- End Parameters ---
-
-        # Calculate duration
-        duration_per_line_adjusted = avg_sec_per_line_at_1x / speed_multiplier
-        total_duration_sec = duration_per_line_adjusted * num_lines * loop_count
-
-        # Calculate size (uncompressed WAV)
-        bytes_per_second = sample_rate * num_channels * (bits_per_sample / 8)
-        estimated_size_bytes = total_duration_sec * bytes_per_second
-        estimated_size_mb = round(
-            estimated_size_bytes / (1024**2), 1) if estimated_size_bytes > 0 else 0
-
-        return total_duration_sec, estimated_size_mb, num_lines
+                    self.mode_wrapper,
+                    self.affirmations_text_input,
+                    self.affirmations_loop_count,
+                    self.output_file_name,
+                )

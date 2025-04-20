@@ -13,7 +13,7 @@ class ModeWrapper:
             MusicMode(),
             # WhisperLayerMode(),
             # EmbedTonesMode(),
-            SolfeggioMode(),
+            # SolfeggioMode(),
             # IsochronicMode(),
             # MorphicFieldMode()
         ]
@@ -48,12 +48,10 @@ class MusicMode(VoiceMode):
         self.volume_mix = 0
 
     def initialize(self):
-        self.music_file = st.file_uploader(
-            "🎼 Upload Background Music (mp3 or wav):", type=["mp3", "wav"])
-        self.volume_mix = st.slider(
-            "🔊 Background Music Volume (relative to voice):", 0, 100, 30)
+        self.music_file = st.file_uploader("🎼 Upload Background Music (mp3 or wav):", type=["mp3", "wav"])
+        self.volume_mix = st.slider("🔊 Background Music Volume (relative to voice):", 0, 100, 30)
 
-    def modify_voice(self, voice):
+    def modify_voice(self, voice: AudioSegment):
         if self.music_file:
             music_ext = os.path.splitext(self.music_file.name)[1]
             with tempfile.NamedTemporaryFile(delete=False, suffix=music_ext) as music_tmp:
@@ -92,15 +90,14 @@ class EmbedTonesMode(VoiceMode):
 
     def modify_voice(self, voice):
         if self.enabled:
-            tone_left = Sine(200).to_audio_segment(
-                duration=len(voice), volume=-25).pan(-1)
-            tone_right = Sine(204.5).to_audio_segment(
-                duration=len(voice), volume=-25).pan(1)
+            tone_left = Sine(200).to_audio_segment(duration=len(voice), volume=-25).pan(-1)
+            tone_right = Sine(204.5).to_audio_segment(duration=len(voice), volume=-25).pan(1)
             tone_combined = tone_left.overlay(tone_right)
             voice = tone_combined.overlay(voice)
         return voice
 
 
+# doesn't work correctly, why? Volume = -20, what about all the Hz
 class SolfeggioMode(VoiceMode):
     def __init__(self):
         super().__init__()
@@ -118,18 +115,15 @@ class SolfeggioMode(VoiceMode):
             639: "639 Hz – Connection & Relationships",
             741: "741 Hz – Awakening Intuition",
             852: "852 Hz – Returning to Spiritual Order",
-            963: "963 Hz – Pineal Gland Activation & Oneness"
+            963: "963 Hz – Pineal Gland Activation & Oneness",
         }
-        self.solfeggio_label = st.selectbox(
-            "🎶 Add Solfeggio Frequency (Optional)", list(self.solfeggio_options.values()))
-        self.solfeggio_freq = [freq for freq, label in self.solfeggio_options.items(
-        ) if label == self.solfeggio_label][0]
-        self.enabled = self.solfeggio_freq != None
+        self.solfeggio_label = st.selectbox("🎶 Add Solfeggio Frequency (Optional)", list(self.solfeggio_options.values()))
+        self.solfeggio_freq = [freq for freq, label in self.solfeggio_options.items() if label == self.solfeggio_label][0]
+        self.enabled = self.solfeggio_freq is not None
 
     def modify_voice(self, voice):
         if self.enabled:
-            solfeggio = Sine(self.solfeggio_freq).to_audio_segment(
-                duration=len(voice), volume=-20)
+            solfeggio = Sine(self.solfeggio_freq).to_audio_segment(duration=len(voice), volume=-20)
             voice = voice.overlay(solfeggio)
         return voice
 
@@ -140,13 +134,11 @@ class IsochronicMode(VoiceMode):
         self.enabled = False
 
     def initialize(self):
-        self.enabled = st.checkbox(
-            "🌀 Add Isochronic Tones (7.83Hz - Earth/Healing Base)")
+        self.enabled = st.checkbox("🌀 Add Isochronic Tones (7.83Hz - Earth/Healing Base)")
 
     def modify_voice(self, voice):
         if self.enabled:
-            pulse = Sine(150).to_audio_segment(
-                duration=64, volume=-30).fade_in(5).fade_out(5)
+            pulse = Sine(150).to_audio_segment(duration=64, volume=-30).fade_in(5).fade_out(5)
             pattern = pulse * (len(voice) // len(pulse))
             voice = pattern.overlay(voice)
         return voice
@@ -162,7 +154,6 @@ class MorphicFieldMode(VoiceMode):
 
     def modify_voice(self, voice):
         if self.enabled:
-            morphic = voice.low_pass_filter(
-                4000).pan(-1).overlay(voice.high_pass_filter(5000).pan(1), gain_during_overlay=-5)
+            morphic = voice.low_pass_filter(4000).pan(-1).overlay(voice.high_pass_filter(5000).pan(1), gain_during_overlay=-5)
             voice = morphic.overlay(voice, gain_during_overlay=-3)
         return voice

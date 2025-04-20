@@ -1,7 +1,5 @@
 import os
-import shutil
 import tempfile
-from io import BytesIO
 
 import pyttsx3
 import streamlit as st
@@ -16,9 +14,9 @@ class AudioEngine:
         self.tts_temp_path = None
 
     def engine_configuration(self, audio_play_speed: float):
-        self.engine.setProperty('rate', int(200 * audio_play_speed))
-        voices = self.engine.getProperty('voices')
-        self.engine.setProperty('voice', voices[0].id)
+        self.engine.setProperty("rate", int(200 * audio_play_speed))
+        voices = self.engine.getProperty("voices")
+        self.engine.setProperty("voice", voices[0].id)
 
     def generate_tts_to_tempfile(self, affirmations_text_input: str):
         temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
@@ -33,18 +31,15 @@ class AudioEngine:
             self.generate_tts_to_tempfile(affirmations_text_input)
 
             # Load and loop the voice
-            voice = AudioSegment.from_file(
-                self.tts_temp_path, format="wav") * loop_count
+            voice = AudioSegment.from_file(self.tts_temp_path, format="wav") * loop_count
             voice = mode_wrapper.apply_all(voice)
 
             # Export to disk for large affirmations
-            output_path = os.path.join(
-                tempfile.gettempdir(), output_file_name)
+            output_path = os.path.join(tempfile.gettempdir(), output_file_name)
             voice.export(output_path, format="wav")
             st.audio(output_path, format="audio/wav")
             with open(output_path, "rb") as f:
-                st.download_button(
-                    "📥 Download WAV", data=f, file_name=output_file_name, mime="audio/wav")
+                st.download_button("📥 Download WAV", data=f, file_name=output_file_name, mime="audio/wav")
 
             st.success("✅ Subliminal Generated!")
 

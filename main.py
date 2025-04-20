@@ -1,11 +1,14 @@
 # ==========================================
 # Pro Subliminal Audio Editor V2 (OOP Refactor - Optimized)
 # ==========================================
+from pathlib import Path
+
 import streamlit as st
 from PIL import Image
 
 # --- Early Config ---
-favicon = Image.open(r"assets\favico.png")  # Replace with your favicon file name
+favicon_path = Path("assets") / "favico.png"
+favicon = Image.open(favicon_path)
 st.set_page_config(layout="wide", page_title="MindMorph - Pro Subliminal Audio Editor", page_icon=favicon)
 
 # --- Imports ---

@@ -1,6 +1,34 @@
-streamlit
-pyttsx3
-pydub
-shutil
-streamlit-advanced-audio
-soundfile
+# requirements.txt
+
+# --- Core Framework ---
+streamlit~=1.33.0
+
+# --- NumPy Constraint (Critical) ---
+# Lock numpy below version 2.0 to avoid ABI incompatibility errors
+# with libraries compiled against NumPy 1.x
+numpy<2.0
+
+# --- Audio Processing & I/O ---
+librosa~=0.10.1
+soundfile~=0.12.1
+pydub~=0.25.1
+scipy~=1.12.0   # Requires numpy<2.0 generally
+
+# --- Text-to-Speech ---
+pyttsx3~=2.90
+
+# --- Machine Learning (Common Dependency) ---
+# Ensure scikit-learn version compatible with numpy<2.0
+scikit-learn~=1.4.1
+
+# --- Data Handling (Common Dependency) ---
+# Ensure pandas/bottleneck versions compatible with numpy<2.0
+pandas~=2.2.1
+bottleneck~=1.3.7
+
+# --- Streamlit Components ---
+streamlit-advanced-audio~=0.1.1
+
+# Note: shutil is a built-in Python standard library module. Do not list it here.
+# The ~= operator means "compatible release", allowing patch updates but not major/minor ones
+# that might break compatibility (e.g., ~=1.33.0 means >=1.33.0 but <1.34.0)

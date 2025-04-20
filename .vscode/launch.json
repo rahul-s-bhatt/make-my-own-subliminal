@@ -22,6 +22,20 @@
             ]
         },
         {
+            "name": "Debug Streamlit (.venv)", // Renamed for clarity
+            "type": "python",
+            "request": "launch",
+            // "program": "C:\\ProgramData\\anaconda3\\Lib\\site-packages\\streamlit", // --- DELETE OR COMMENT OUT THIS LINE ---
+            "module": "streamlit", // --- ADD THIS LINE --- Run 'python -m streamlit' essentially
+            "args": [
+                "run",
+                "main4.py"
+                // You can add other Streamlit arguments here if needed, like:
+                // "--server.port", "8501"
+            ],
+            "console": "integratedTerminal" // Shows output in VS Code's integrated terminal
+        },
+        {
             "name": "Python: Attach Remote",
             "type": "python",
             "request": "attach",

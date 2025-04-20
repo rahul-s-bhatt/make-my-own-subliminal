@@ -1,26 +1,20 @@
 # ==========================================
 # MindMorph - Pro Subliminal Audio Editor
-# Version: 2.1 (OOP - Optimized & Clarified + Onboarding)
+# Version: 2.4 (OOP - Optimized & Clarified + Onboarding v4 - Visual Steps)
 # ==========================================
 # --- Early Config ---
-# Set page config early, ideally first st command
 import os
 
 import streamlit as st
-from PIL import Image  # Keep PIL import here after installing Pillow
+from PIL import Image
 
-favicon_path = os.path.join("assets", "favico.png")  # Assuming assets folder is in the same dir as the script
+favicon_path = os.path.join("assets", "favico.png")
 page_icon = None
 try:
     page_icon = Image.open(favicon_path)
 except FileNotFoundError:
-    # logger.warning(f"Favicon not found at {favicon_path}") # Log if logger is setup
-    pass  # Continue without favicon if not found
-st.set_page_config(
-    layout="wide",
-    page_title="MindMorph - Pro Subliminal Editor",
-    page_icon=page_icon,  # Use loaded icon or None
-)
+    pass
+st.set_page_config(layout="wide", page_title="MindMorph - Pro Subliminal Editor", page_icon=page_icon)
 
 # --- Imports ---
 import logging
@@ -495,7 +489,7 @@ class TTSGenerator:
 
 
 # ==========================================
-# 4. UI Management (Class) - WITH CLARIFICATIONS & ONBOARDING
+# 4. UI Management (Class) - WITH ENHANCED ONBOARDING V4
 # ==========================================
 class UIManager:
     """Handles rendering Streamlit UI components with enhanced clarity."""
@@ -515,8 +509,8 @@ class UIManager:
                 st.header("MindMorph")
             st.caption("Subliminal Audio Editor")
             st.markdown("---")
-            st.header("➕ Add Tracks")
-            st.markdown("Use options below to add audio layers.")
+            st.markdown("### STEP 1: Add Audio Layers")
+            st.markdown("Use options below to add sounds to your project.")
             self._render_uploader()
             st.divider()
             self._render_tts_generator()
@@ -525,10 +519,10 @@ class UIManager:
             st.divider()
             self._render_solfeggio_generator()
             st.markdown("---")
-            st.info("Edit track details in the main panel.")
+            st.info("Edit track details in the main panel after adding.")
 
     def _render_uploader(self):
-        st.subheader("📁 Upload Audio")
+        st.subheader("📁 Upload Audio File(s)")
         uploaded_files = st.file_uploader(
             "Upload background music or recordings",
             type=["wav", "mp3", "ogg", "flac"],
@@ -575,7 +569,7 @@ class UIManager:
         st.markdown("<small>Generates stereo tones potentially inducing brainwave states (requires headphones).</small>", unsafe_allow_html=True)
         bb_cols = st.columns(2)
         bb_duration = bb_cols[0].number_input("Duration (s)", 1, 3600, 60, 1, key="bb_duration", help="Length in seconds.")
-        bb_vol = bb_cols[1].slider("Volume##BB", 0.0, 1.0, 0.3, 0.05, key="bb_volume", help="Loudness (0.0 to 1.0).")
+        bb_vol = bb_cols[1].slider("Volume##BB", 0.0, 1.0, 0.3, 0.05, key="bb_volume", help="Loudness (0.0 to 1.0). Usually kept low.")
         bb_fcols = st.columns(2)
         bb_fleft = bb_fcols[0].number_input("Left Freq (Hz)", 20, 1000, 200, 1, key="bb_freq_left", help="Left ear frequency.")
         bb_fright = bb_fcols[1].number_input("Right Freq (Hz)", 20, 1000, 210, 1, key="bb_freq_right", help="Right ear frequency.")
@@ -595,7 +589,7 @@ class UIManager:
         cols = st.columns(2)
         freq = cols[0].selectbox("Frequency (Hz)", freqs, index=4, key="solf_freq", help="Select Solfeggio frequency.")
         duration = cols[1].number_input("Duration (s)##Solf", 1, 3600, 60, 1, key="solf_duration", help="Length in seconds.")
-        vol = st.slider("Volume##Solf", 0.0, 1.0, 0.3, 0.05, key="solf_volume", help="Loudness (0.0 to 1.0).")
+        vol = st.slider("Volume##Solf", 0.0, 1.0, 0.3, 0.05, key="solf_volume", help="Loudness (0.0 to 1.0). Usually kept low.")
         if st.button("Generate Solfeggio Track", key="generate_solf", help="Create track with this tone."):
             with st.spinner("Generating..."):
                 audio = generate_solfeggio_frequency(duration, freq, GLOBAL_SR, vol)
@@ -610,12 +604,33 @@ class UIManager:
         st.header("🎚️ Tracks Editor")
         tracks = self.app_state.get_all_tracks()
         if not tracks:
-            # --- Enhanced Empty State ---
-            st.info("Your project is empty. Use the sidebar on the left to add your first audio track!", icon="👈")
-            st.markdown("You can:")
-            st.markdown("- **Upload** existing audio files (music, recordings).")
-            st.markdown("- **Generate** spoken affirmations from text.")
-            st.markdown("- **Generate** Binaural Beats or Solfeggio tones.")
+            # --- Enhanced Empty State V3 ---
+            # Displayed only when the welcome message has been dismissed
+            if "welcome_message_shown" in st.session_state:
+                with st.container(border=True):
+                    st.markdown("#### ✨ Your Project is Empty!")
+                    st.markdown(
+                        """
+                          Ready to start creating? Look at the **sidebar on the left** (👈 click the arrow if it's hidden).
+                          That's where you can:
+                          """
+                    )
+                    # Use columns for better visual separation of add options
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.markdown("##### 📁 Upload Audio")
+                        st.caption("Add music, background sounds, etc.")
+                    with col2:
+                        st.markdown("##### 🗣️ Generate Affirmations")
+                        st.caption("Convert text to speech.")
+                    with col3:
+                        st.markdown("##### 🧠✨ Generate Tones")
+                        st.caption("Add Binaural or Solfeggio.")
+
+                    st.markdown("""
+                          ---
+                          Once you add a track, the editor controls will appear here in this main panel.
+                          """)
             # ---------------------------
             return  # Stop rendering editor if no tracks
 
@@ -841,6 +856,7 @@ class UIManager:
 
     def render_preview_audio_player(self):
         """Displays the preview audio player if preview data exists in state."""
+        # This should be called in the main layout area *after* the master controls column
         if "preview_audio" in st.session_state and st.session_state.preview_audio:
             st.markdown("**Preview:**")
             st.audio(st.session_state.preview_audio, format="audio/wav")
@@ -934,32 +950,48 @@ class Benchmarker:
 
 
 # ==========================================
-# 6. Main Application Logic & Onboarding
+# 6. Main Application Logic & Onboarding V4
 # ==========================================
 
 
 # --- Onboarding Helper ---
 def show_welcome_message():
-    """Displays the welcome message container."""
-    with st.container(border=True):
-        st.subheader("👋 Welcome to MindMorph!")
-        st.markdown("""
-        This tool helps you create custom subliminal audio tracks. You can:
-        * **Layer** affirmations (text-to-speech), background sounds, and special frequencies.
-        * **Adjust** speed, pitch, volume, filters, and stereo position for each layer.
-        * **Export** your final creation as a WAV audio file.
+    """Displays the welcome message container using columns for clarity."""
+    # Use session state to show only once per session
+    if "welcome_message_shown" not in st.session_state:
+        # --- Enhanced Welcome Message V4 ---
+        with st.container(border=True):
+            st.markdown("### 👋 Welcome to MindMorph!")
+            st.markdown("Create custom subliminal audio by layering sounds and applying effects.")
+            st.markdown("---")
+            st.markdown("#### Quick Start:")
 
-        **Quick Start:**
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                # Added stronger visual cue and more direct language
+                st.markdown("#### 1. Add Tracks ➕")
+                st.markdown("Look Left! **👈** Use the **sidebar** to add your first audio layer.")
+                st.caption("Upload, Generate TTS, Tones")
+            with col2:
+                st.markdown("#### 2. Edit Tracks 🎚️")
+                st.markdown("Adjust **effects** in the main panel (once tracks are added).")
+                st.caption("Click 'Apply Effects' for Speed/Pitch/Filter!")
+            with col3:
+                st.markdown("#### 3. Mix & Export 🔊")
+                st.markdown("Use **master controls** at the bottom.")
+                st.caption("Preview or Download WAV")
 
-        1.  **➕ Add Tracks:** Use the **sidebar** on the left to upload audio or generate sounds.
-        2.  **🎚️ Edit Tracks:** Adjust settings in the main panel below. Remember to click **'Apply Effects'** for Speed/Pitch/Filter changes.
-        3.  **🔊 Mix & Export:** Use the controls at the bottom to preview or download your final mix.
+            st.markdown("---")
+            st.markdown("*(Click button below to hide this guide. Find details in Instructions at page bottom.)*")
 
-        Click the button below to hide this message for this session. Check the instructions expander at the bottom for more details later!
-        """)
-        if st.button("Got it! Let's Start Creating ✨", key="dismiss_welcome"):
-            st.session_state.welcome_message_shown = True
-            st.rerun()
+            # --- Center the Dismiss Button ---
+            button_cols = st.columns([1, 1.5, 1])  # Use columns for centering
+            with button_cols[1]:
+                if st.button("Got it! Let's Start Creating ✨", key="dismiss_welcome", type="primary", use_container_width=True):
+                    st.session_state.welcome_message_shown = True
+                    logger.info("Welcome message dismissed by user.")
+                    st.rerun()
+        # ---------------------------------
 
 
 def main():
@@ -970,18 +1002,16 @@ def main():
     st.title("🧠 MindMorph - Subliminal Audio Editor")
 
     # --- Onboarding Welcome Message ---
-    if "welcome_message_shown" not in st.session_state:
-        show_welcome_message()
-        # Optionally, stop execution here until dismissed if desired,
-        # but allowing the rest of the UI to render might be better.
-        # st.stop()
+    show_welcome_message()  # Function now handles the logic internally
     # ---------------------------------
 
-    st.markdown("""
-    Create your own custom subliminal audio tracks by layering affirmations, background sounds, and therapeutic frequencies.
-    Adjust speed, pitch, volume, and more, then export your creation.
-    """)
-    st.divider()
+    # Show intro text only if welcome message is dismissed
+    if "welcome_message_shown" in st.session_state:
+        st.markdown("""
+        Create your own custom subliminal audio tracks by layering affirmations, background sounds, and therapeutic frequencies.
+        Adjust speed, pitch, volume, and more, then export your creation.
+        """)
+        st.divider()
 
     # --- Initialize Core Components ---
     app_state = AppState()
@@ -990,28 +1020,27 @@ def main():
     # benchmarker = Benchmarker(tts_generator) # Keep benchmarker optional
 
     # --- Render UI Sections ---
-    ui_manager.render_sidebar()
-    ui_manager.render_tracks_editor()  # This now handles the empty state message
-    ui_manager.render_master_controls()
-    # Display preview audio player if generated (needs to be in main layout scope)
-    ui_manager.render_preview_audio_player()
-
-    # --- Optional Benchmarking Section ---
-    # (Commented out by default)
-    # st.divider()
-    # with st.expander("⏱️ Run Benchmarks", expanded=False):
-    #      st.info("Run performance tests (can take time).")
-    #      bm_words = st.number_input("Words for TTS Benchmark", 100, 20000, 10000, 100)
-    #      bm_reps = st.number_input("Repetitions", 1, 10, 1, 1)
-    #      if st.button("Run TTS Benchmark"): benchmarker.benchmark_tts(bm_words, bm_reps)
-
-    # --- Instructions ---
-    ui_manager.render_instructions()
-
-    # --- Footer ---
-    st.divider()
-    st.caption("MindMorph Subliminal Editor")
-    logger.info("Reached end of main application function render.")
+    # Only render the main UI if the welcome message isn't showing OR if it has been dismissed
+    if "welcome_message_shown" in st.session_state:
+        ui_manager.render_sidebar()
+        ui_manager.render_tracks_editor()  # Handles empty state with improved message
+        ui_manager.render_master_controls()
+        # Display preview audio player if generated
+        ui_manager.render_preview_audio_player()
+        # Instructions
+        ui_manager.render_instructions()
+        # --- Optional Benchmarking Section ---
+        # (Commented out by default)
+        # st.divider()
+        # with st.expander("⏱️ Run Benchmarks", expanded=False):
+        #      st.info("Run performance tests (can take time).")
+        #      bm_words = st.number_input("Words for TTS Benchmark", 100, 20000, 10000, 100)
+        #      bm_reps = st.number_input("Repetitions", 1, 10, 1, 1)
+        #      if st.button("Run TTS Benchmark"): benchmarker.benchmark_tts(bm_words, bm_reps)
+        # --- Footer ---
+        st.divider()
+        st.caption("MindMorph Subliminal Editor")
+        logger.info("Reached end of main application function render.")
 
 
 if __name__ == "__main__":

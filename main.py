@@ -1,6 +1,6 @@
 # ==========================================
 # MindMorph - Pro Subliminal Audio Editor
-# Version: 2.4 (OOP - Optimized & Clarified + Onboarding v4 - Visual Steps)
+# Version: 2.5 (OOP - Optimized & Clarified + Onboarding v5 - Instructions Expanded Initially)
 # ==========================================
 # --- Early Config ---
 import os
@@ -24,7 +24,7 @@ import tempfile
 import time
 import traceback
 import uuid
-from io import BytesIO
+from io import BytesIO, StringIO  # Added StringIO for text handling
 from typing import Any, Dict, List, Optional, Tuple
 
 # --- Logging Setup ---
@@ -51,6 +51,7 @@ logger.info("-----------------------------------------------------")
 
 # --- Core Libraries ---
 try:
+    import docx  # For reading .docx files
     import librosa
     import librosa.effects
     import numpy as np
@@ -60,11 +61,16 @@ try:
     from streamlit.runtime.uploaded_file_manager import UploadedFile
     from streamlit_advanced_audio import WaveSurferOptions, audix
 
-    logger.debug("Core audio and UI libraries imported successfully.")
+    logger.debug("Core audio, UI, and docx libraries imported successfully.")
 except ImportError as e:
     logger.exception("CRITICAL: Failed to import core libraries. App cannot continue.")
-    st.error(f"Core library import failed: {e}. Please ensure all dependencies from requirements.txt are installed and restart.")
-    st.error(f"Missing library details: {e.name}")
+    missing_lib = e.name
+    install_cmd = f"pip install {missing_lib}"
+    if missing_lib == "docx":
+        install_cmd = "pip install python-docx"
+    st.error(f"Core library import failed: {e}. Please ensure all dependencies are installed.")
+    st.error(f"Missing library: {missing_lib}")
+    st.error(f"Try running: `{install_cmd}`")
     st.code(traceback.format_exc())
     st.stop()
 
@@ -318,6 +324,30 @@ def mix_tracks(tracks_dict: Dict[TrackID, TrackData], preview: bool = False) -> 
     return final_mix.astype(np.float32)
 
 
+# --- Helper to read text files ---
+def read_text_file(uploaded_file: UploadedFile) -> Optional[str]:
+    """Reads content from uploaded txt or docx file."""
+    try:
+        file_name = uploaded_file.name
+        if file_name.lower().endswith(".txt"):
+            logger.info(f"Reading .txt file: {file_name}")
+            # Use StringIO to handle potential decoding issues more gracefully
+            stringio = StringIO(uploaded_file.read().decode("utf-8", errors="replace"))
+            return stringio.read()
+        elif file_name.lower().endswith(".docx"):
+            logger.info(f"Reading .docx file: {file_name}")
+            document = docx.Document(uploaded_file)
+            return "\n".join([para.text for para in document.paragraphs if para.text])  # Join non-empty paragraphs
+        else:
+            st.error(f"Unsupported file type: {uploaded_file.type}. Please upload .txt or .docx.")
+            logger.error(f"Unsupported affirmation file type: {uploaded_file.type}")
+            return None
+    except Exception as e:
+        logger.exception(f"Error reading affirmation file: {uploaded_file.name}")
+        st.error(f"Error reading file '{uploaded_file.name}': {e}")
+        return None
+
+
 # ==========================================
 # 2. Application State Management
 # ==========================================
@@ -489,7 +519,7 @@ class TTSGenerator:
 
 
 # ==========================================
-# 4. UI Management (Class) - WITH ENHANCED ONBOARDING V4
+# 4. UI Management (Class) - ADDED AFFIRMATION INPUT OPTIONS
 # ==========================================
 class UIManager:
     """Handles rendering Streamlit UI components with enhanced clarity."""
@@ -510,16 +540,16 @@ class UIManager:
             st.caption("Subliminal Audio Editor")
             st.markdown("---")
             st.markdown("### STEP 1: Add Audio Layers")
-            st.markdown("Use options below to add sounds to your project.")
+            st.markdown("Use options below to add sounds.")
             self._render_uploader()
             st.divider()
-            self._render_tts_generator()
-            st.divider()
+            self._render_affirmation_inputs()
+            st.divider()  # Changed from _render_tts_generator
             self._render_binaural_generator()
             st.divider()
             self._render_solfeggio_generator()
             st.markdown("---")
-            st.info("Edit track details in the main panel after adding.")
+            st.info("Edit track details in the main panel.")
 
     def _render_uploader(self):
         st.subheader("📁 Upload Audio File(s)")
@@ -532,6 +562,7 @@ class UIManager:
         )
         loaded_track_names = self.app_state.get_loaded_track_names()
         if uploaded_files:
+            # ... (rest of uploader logic is the same) ...
             for file in uploaded_files:
                 if file.name not in loaded_track_names:
                     logger.info(f"Processing upload: {file.name}")
@@ -548,21 +579,76 @@ class UIManager:
                         logger.warning(f"Skipped empty upload: {file.name}")
                         st.warning(f"Skipped empty: {file.name}")
 
-    def _render_tts_generator(self):
-        st.subheader("🗣️ Generate Affirmations")
-        affirmation_text = st.text_area("Enter Affirmations (one per line)", height=100, key="affirmation_text", help="Type affirmations here.")
-        if st.button("Generate Affirmation Track", key="generate_tts_key", help="Convert text above to spoken audio track."):
-            if affirmation_text:
-                with st.spinner("Generating TTS..."):
-                    audio, sr = self.tts_generator.generate(affirmation_text)
-                if audio is not None and sr is not None:
-                    track_id = str(uuid.uuid4())
-                    track_params = AppState.get_default_track_params()
-                    track_params.update({"original_audio": audio, "processed_audio": audio.copy(), "sr": sr, "name": "Affirmations"})
-                    self.app_state.add_track(track_id, track_params)
-                    st.success("Affirmations track generated!")
-            else:
-                st.warning("Please enter text.")
+    # --- UPDATED: Method to handle different affirmation inputs ---
+    def _render_affirmation_inputs(self):
+        """Renders options for adding affirmations (TTS, File Upload, Record Placeholder)."""
+        st.subheader("🗣️ Add Affirmations")
+
+        # Use tabs for different input methods
+        tab1, tab2, tab3 = st.tabs(["Type Text", "Upload File", "Record Audio"])
+
+        with tab1:
+            st.caption("Type or paste affirmations below.")
+            affirmation_text = st.text_area(
+                "Affirmations (one per line)",
+                height=150,
+                key="affirmation_text_area",  # Increased height slightly
+                label_visibility="collapsed",
+                help="Enter each affirmation on a new line.",
+            )
+            if st.button(
+                "Generate Track from Text", key="generate_tts_text_key", use_container_width=True, help="Convert the text above to a spoken audio track using Text-to-Speech."
+            ):
+                if affirmation_text:
+                    self._generate_tts_track(affirmation_text, "Affirmations (Text)")
+                else:
+                    st.warning("Please enter text in the text area first.")
+
+        with tab2:
+            st.caption("Upload a .txt or .docx file containing affirmations.")
+            uploaded_affirmation_file = st.file_uploader(
+                "Upload Affirmation File",
+                type=["txt", "docx"],
+                key="affirmation_file_uploader",
+                label_visibility="collapsed",
+                help="Select a text or Word document. Each line or paragraph will be read.",
+            )
+            if st.button(
+                "Generate Track from File",
+                key="generate_tts_file_key",
+                use_container_width=True,
+                help="Read the uploaded file and convert its text content to a spoken audio track.",
+            ):
+                if uploaded_affirmation_file is not None:
+                    with st.spinner(f"Reading {uploaded_affirmation_file.name}..."):
+                        affirmation_text = read_text_file(uploaded_affirmation_file)
+                    if affirmation_text:
+                        self._generate_tts_track(affirmation_text, f"Affirmations ({uploaded_affirmation_file.name})")
+                    else:
+                        st.error("Could not read text from the uploaded file.")
+                else:
+                    st.warning("Please upload a .txt or .docx file first.")
+
+        with tab3:
+            st.caption("Record your own voice for affirmations.")
+            st.info("🎙️ Audio recording requires microphone access and a custom component (like streamlit-webrtc) which is not implemented in this version.")
+            st.markdown("For now, please record using another tool (like Audacity or a mobile app) and use the **📁 Upload Audio File(s)** option above.")
+            st.button("Start Recording", key="start_record_key", disabled=True, use_container_width=True)  # Disabled placeholder
+
+    def _generate_tts_track(self, text_content: str, track_name: str):
+        """Helper to generate TTS and add track."""
+        with st.spinner("Generating TTS audio... This may take a moment."):
+            audio, sr = self.tts_generator.generate(text_content)
+            if audio is not None and sr is not None:
+                track_id = str(uuid.uuid4())
+                track_params = AppState.get_default_track_params()
+                track_params.update({"original_audio": audio, "processed_audio": audio.copy(), "sr": sr, "name": track_name})
+                self.app_state.add_track(track_id, track_params)
+                st.success(f"'{track_name}' track generated!")
+                st.toast("Affirmation track added!", icon="✅")
+            # Error handled within tts_generator.generate
+
+    # --- End of updated methods ---
 
     def _render_binaural_generator(self):
         st.subheader("🧠 Generate Binaural Beats")
@@ -604,35 +690,23 @@ class UIManager:
         st.header("🎚️ Tracks Editor")
         tracks = self.app_state.get_all_tracks()
         if not tracks:
-            # --- Enhanced Empty State V3 ---
-            # Displayed only when the welcome message has been dismissed
             if "welcome_message_shown" in st.session_state:
                 with st.container(border=True):
                     st.markdown("#### ✨ Your Project is Empty!")
-                    st.markdown(
-                        """
-                          Ready to start creating? Look at the **sidebar on the left** (👈 click the arrow if it's hidden).
-                          That's where you can:
-                          """
-                    )
-                    # Use columns for better visual separation of add options
+                    st.markdown("Ready to start creating? Look at the **sidebar on the left** (👈 click the arrow if it's hidden).")
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         st.markdown("##### 📁 Upload Audio")
-                        st.caption("Add music, background sounds, etc.")
+                        st.caption("Add music, sounds...")
                     with col2:
                         st.markdown("##### 🗣️ Generate Affirmations")
-                        st.caption("Convert text to speech.")
+                        st.caption("From text, file, or recording.")
                     with col3:
                         st.markdown("##### 🧠✨ Generate Tones")
                         st.caption("Add Binaural or Solfeggio.")
-
-                    st.markdown("""
-                          ---
-                          Once you add a track, the editor controls will appear here in this main panel.
-                          """)
-            # ---------------------------
-            return  # Stop rendering editor if no tracks
+                    st.markdown("---")
+                    st.markdown("Once you add a track, the editor controls will appear here.")
+            return
 
         st.markdown("Adjust settings below. **Volume & Pan** live. Others need **'Apply Effects'**.")
         st.divider()
@@ -660,6 +734,7 @@ class UIManager:
 
     def _render_track_main_col(self, track_id: TrackID, track_data: TrackData, column: st.delta_generator.DeltaGenerator):
         """Renders the waveform and effects controls for a single track."""
+        # (Implementation remains the same as previous version)
         with column:
             try:
                 processed_audio = track_data.get("processed_audio")
@@ -768,6 +843,7 @@ class UIManager:
 
     def _render_track_controls_col(self, track_id: TrackID, track_data: TrackData, column: st.delta_generator.DeltaGenerator) -> bool:
         """Renders the controls (name, vol, pan, etc.). Returns True if delete clicked."""
+        # (Implementation remains the same as previous version)
         delete_clicked = False
         with column:
             try:
@@ -801,6 +877,7 @@ class UIManager:
 
     def render_master_controls(self):
         """Renders the master preview and export buttons."""
+        # (Implementation remains the same as previous version)
         st.divider()
         st.header("🔊 Master Output")
         master_cols = st.columns(2)
@@ -808,7 +885,6 @@ class UIManager:
             st.button("🎧 Preview Mix (10s)", key="preview_mix", use_container_width=True, help="Play first 10s of mix with current settings.", on_click=self._handle_preview_click)
         with master_cols[1]:
             st.button("💾 Export Full Mix (.wav)", key="export_mix", use_container_width=True, help="Generate complete mix for download.", on_click=self._handle_export_click)
-            # Download button appears here after export generation
             if "export_buffer" in st.session_state and st.session_state.export_buffer:
                 st.download_button(
                     label="⬇️ Download Full Mix (.wav)",
@@ -818,10 +894,11 @@ class UIManager:
                     key="download_export_key",
                     use_container_width=True,
                 )
-                st.session_state.export_buffer = None  # Clear buffer after showing
+                st.session_state.export_buffer = None
 
     def _handle_preview_click(self):
         """Callback for Preview Mix button."""
+        # (Implementation remains the same)
         logger.info("Preview Mix button clicked.")
         tracks = self.app_state.get_all_tracks()
         if "preview_audio" in st.session_state:
@@ -839,6 +916,7 @@ class UIManager:
 
     def _handle_export_click(self):
         """Callback for Export Mix button."""
+        # (Implementation remains the same)
         logger.info("Export Full Mix button clicked.")
         tracks = self.app_state.get_all_tracks()
         if "export_buffer" in st.session_state:
@@ -856,16 +934,18 @@ class UIManager:
 
     def render_preview_audio_player(self):
         """Displays the preview audio player if preview data exists in state."""
-        # This should be called in the main layout area *after* the master controls column
+        # (Implementation remains the same)
         if "preview_audio" in st.session_state and st.session_state.preview_audio:
             st.markdown("**Preview:**")
             st.audio(st.session_state.preview_audio, format="audio/wav")
-            st.session_state.preview_audio = None  # Clear after displaying
+            st.session_state.preview_audio = None
 
     def render_instructions(self):
         """Renders the instructions expander with more detail."""
+        # (Implementation remains the same as previous version, but now uses expanded logic)
+        tracks_exist = bool(self.app_state.get_all_tracks())
         st.divider()
-        with st.expander("📖 Show Instructions & Notes", expanded=False):
+        with st.expander("📖 Show Instructions & Notes", expanded=not tracks_exist):  # Expand if no tracks
             st.markdown("""
               **Welcome to MindMorph!** Create custom subliminal audio by layering affirmations, sounds, & frequencies.
 
@@ -950,85 +1030,59 @@ class Benchmarker:
 
 
 # ==========================================
-# 6. Main Application Logic & Onboarding V4
+# 6. Main Application Logic & Onboarding V5
 # ==========================================
 
 
 # --- Onboarding Helper ---
 def show_welcome_message():
     """Displays the welcome message container using columns for clarity."""
-    # Use session state to show only once per session
     if "welcome_message_shown" not in st.session_state:
-        # --- Enhanced Welcome Message V4 ---
         with st.container(border=True):
             st.markdown("### 👋 Welcome to MindMorph!")
             st.markdown("Create custom subliminal audio by layering sounds and applying effects.")
             st.markdown("---")
             st.markdown("#### Quick Start:")
-
             col1, col2, col3 = st.columns(3)
             with col1:
-                # Added stronger visual cue and more direct language
                 st.markdown("#### 1. Add Tracks ➕")
-                st.markdown("Look Left! **👈** Use the **sidebar** to add your first audio layer.")
+                st.markdown("Look Left! **👈** Use the **sidebar**.")
                 st.caption("Upload, Generate TTS, Tones")
             with col2:
                 st.markdown("#### 2. Edit Tracks 🎚️")
-                st.markdown("Adjust **effects** in the main panel (once tracks are added).")
+                st.markdown("Adjust **effects** in the main panel.")
                 st.caption("Click 'Apply Effects' for Speed/Pitch/Filter!")
             with col3:
                 st.markdown("#### 3. Mix & Export 🔊")
                 st.markdown("Use **master controls** at the bottom.")
                 st.caption("Preview or Download WAV")
-
             st.markdown("---")
             st.markdown("*(Click button below to hide this guide. Find details in Instructions at page bottom.)*")
-
-            # --- Center the Dismiss Button ---
-            button_cols = st.columns([1, 1.5, 1])  # Use columns for centering
+            button_cols = st.columns([1, 1.5, 1])  # Centering columns
             with button_cols[1]:
                 if st.button("Got it! Let's Start Creating ✨", key="dismiss_welcome", type="primary", use_container_width=True):
                     st.session_state.welcome_message_shown = True
-                    logger.info("Welcome message dismissed by user.")
+                    logger.info("Welcome message dismissed.")
                     st.rerun()
-        # ---------------------------------
 
 
 def main():
     """Main function to run the Streamlit application."""
     logger.info("Starting main application function.")
-
-    # --- Page Header ---
     st.title("🧠 MindMorph - Subliminal Audio Editor")
-
-    # --- Onboarding Welcome Message ---
-    show_welcome_message()  # Function now handles the logic internally
-    # ---------------------------------
-
-    # Show intro text only if welcome message is dismissed
+    show_welcome_message()  # Show welcome message if needed
     if "welcome_message_shown" in st.session_state:
-        st.markdown("""
-        Create your own custom subliminal audio tracks by layering affirmations, background sounds, and therapeutic frequencies.
-        Adjust speed, pitch, volume, and more, then export your creation.
-        """)
+        st.markdown("Create custom subliminals by layering affirmations, sounds, & frequencies. Adjust effects & mix.")
         st.divider()
-
-    # --- Initialize Core Components ---
-    app_state = AppState()
-    tts_generator = TTSGenerator()
-    ui_manager = UIManager(app_state, tts_generator)
-    # benchmarker = Benchmarker(tts_generator) # Keep benchmarker optional
-
-    # --- Render UI Sections ---
-    # Only render the main UI if the welcome message isn't showing OR if it has been dismissed
-    if "welcome_message_shown" in st.session_state:
+        app_state = AppState()
+        tts_generator = TTSGenerator()
+        ui_manager = UIManager(app_state, tts_generator)
+        # benchmarker = Benchmarker(tts_generator) # Optional
         ui_manager.render_sidebar()
-        ui_manager.render_tracks_editor()  # Handles empty state with improved message
+        ui_manager.render_tracks_editor()  # Handles empty state
         ui_manager.render_master_controls()
-        # Display preview audio player if generated
-        ui_manager.render_preview_audio_player()
-        # Instructions
-        ui_manager.render_instructions()
+        ui_manager.render_preview_audio_player()  # Display preview if available
+        # ui_manager.render_instructions() # Instructions at the end
         # --- Optional Benchmarking Section ---
         # (Commented out by default)
         # st.divider()
@@ -1037,7 +1091,7 @@ def main():
         #      bm_words = st.number_input("Words for TTS Benchmark", 100, 20000, 10000, 100)
         #      bm_reps = st.number_input("Repetitions", 1, 10, 1, 1)
         #      if st.button("Run TTS Benchmark"): benchmarker.benchmark_tts(bm_words, bm_reps)
-        # --- Footer ---
+        ui_manager.render_instructions()  # Moved instructions here
         st.divider()
         st.caption("MindMorph Subliminal Editor")
         logger.info("Reached end of main application function render.")

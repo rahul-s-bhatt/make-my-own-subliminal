@@ -1,5 +1,5 @@
 # ==========================================
-# Pro Subliminal Audio Editor V2 (OOP Refactor)
+# Pro Subliminal Audio Editor V2 (OOP Refactor - Optimized)
 # ==========================================
 import streamlit as st
 
@@ -19,6 +19,7 @@ from io import BytesIO
 from typing import Any, Dict, List, Optional, Tuple
 
 # --- Logging Setup ---
+# (Same setup as before - creates editor_oop.log)
 log_queue = queue.Queue(-1)
 log_file = "editor_oop.log"
 log_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - [%(funcName)s] - %(message)s")
@@ -28,11 +29,18 @@ file_handler.setLevel(logging.DEBUG)
 queue_handler = logging.handlers.QueueHandler(log_queue)
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.DEBUG)
-root_logger.addHandler(queue_handler)
-listener = logging.handlers.QueueListener(log_queue, file_handler, respect_handler_level=True)
-listener.start()
-logger = logging.getLogger(__name__)  # Use a specific logger for the app module
-logger.info("Application starting up.")
+# Avoid adding handler multiple times on Streamlit reruns
+if not root_logger.hasHandlers() or not any(isinstance(h, logging.handlers.QueueHandler) for h in root_logger.handlers):
+    root_logger.addHandler(queue_handler)
+# Start listener only once (though Streamlit execution model makes this tricky)
+# A simple flag might work for basic cases, or use st.cache_resource in newer Streamlit
+if "listener_started" not in st.session_state:
+    listener = logging.handlers.QueueListener(log_queue, file_handler, respect_handler_level=True)
+    listener.start()
+    st.session_state.listener_started = True
+    # Note: Stopping the listener gracefully is still challenging in Streamlit.
+logger = logging.getLogger(__name__)
+logger.info("Application starting up / rerunning.")
 
 # --- Core Libraries ---
 try:
@@ -57,46 +65,37 @@ logger.debug(f"Global Sample Rate set to: {GLOBAL_SR} Hz")
 AudioData = np.ndarray
 SampleRate = int
 TrackID = str
-TrackData = Dict[str, Any]  # Type hint for track dictionaries
+TrackData = Dict[str, Any]
+
 
 # ==========================================
 # 1. Audio Processing Utilities (Functions)
 # ==========================================
-# These functions are mostly stateless operations on audio data.
-# Keeping them as functions for now, but they could be grouped into a class later.
-
-
+# (Functions load_audio, save_audio, save_audio_to_temp, generate*, apply*, mix_tracks remain the same as the previous OOP version)
+# ... (Keep all audio utility functions from the previous version here) ...
 def load_audio(file_source: UploadedFile | BytesIO | str, target_sr: SampleRate = GLOBAL_SR) -> tuple[AudioData, SampleRate]:
     """Loads, ensures stereo, and resamples audio."""
-    # (Implementation is the same as the previous version)
     logger.info(f"Loading audio from source type: {type(file_source)}")
     try:
         source = file_source
         audio, sr = librosa.load(source, sr=None, mono=False)
-        logger.debug(f"Loaded audio with original SR: {sr}, shape: {audio.shape}")
-
+        logger.debug(f"Loaded audio original SR: {sr}, shape: {audio.shape}")
         if audio.ndim == 1:
             audio = np.stack([audio, audio], axis=-1)
         elif audio.shape[0] == 2:
             audio = audio.T
-
         if audio.shape[1] > 2:
-            logger.warning(f"Audio has {audio.shape[1]} channels. Using first two.")
+            logger.warning(f"Audio > 2 channels ({audio.shape[1]}). Using first two.")
             audio = audio[:, :2]
         elif audio.shape[1] == 1:
-            logger.warning("Audio loaded as mono unexpectedly. Duplicating channel.")
+            logger.warning("Mono audio loaded unexpectedly. Duplicating.")
             audio = np.concatenate([audio, audio], axis=1)
-
         if sr != target_sr:
-            logger.info(f"Resampling audio from {sr} Hz to {target_sr} Hz.")
+            logger.info(f"Resampling from {sr} Hz to {target_sr} Hz.")
             if audio.size > 0:
-                audio_resampled = librosa.resample(audio.T, orig_sr=sr, target_sr=target_sr)
-                audio = audio_resampled.T
+                audio = librosa.resample(audio.T, orig_sr=sr, target_sr=target_sr).T
             else:
                 sr = target_sr
-        else:
-            logger.debug("Audio already at target sample rate.")
-
         return audio.astype(np.float32), target_sr
     except Exception as e:
         logger.exception("Error loading audio.")
@@ -106,43 +105,41 @@ def load_audio(file_source: UploadedFile | BytesIO | str, target_sr: SampleRate 
 
 def save_audio(audio: AudioData, sr: SampleRate) -> BytesIO:
     """Saves audio to an in-memory BytesIO buffer (WAV format)."""
-    # (Implementation is the same as the previous version)
     buffer = BytesIO()
+    logger.debug(f"Saving audio ({audio.shape}, {sr}Hz) to BytesIO.")
     try:
         sf.write(buffer, audio, sr, format="WAV", subtype="PCM_16")
         buffer.seek(0)
-        logger.debug(f"Saved audio ({audio.shape}, {sr}Hz) to BytesIO buffer.")
     except Exception as e:
         logger.exception("Error saving audio to buffer.")
-        st.error(f"Error saving audio to buffer: {e}")
+        st.error(f"Error saving: {e}")
         buffer = BytesIO()
     return buffer
 
 
 def save_audio_to_temp(audio: AudioData, sr: SampleRate) -> str | None:
     """Saves audio to a temporary WAV file."""
-    # (Implementation is the same as the previous version)
     temp_file_path = None
+    logger.debug(f"Saving audio ({audio.shape}, {sr}Hz) to temp file.")
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav", mode="wb") as tmp:
             sf.write(tmp, audio, sr, format="WAV", subtype="PCM_16")
             temp_file_path = tmp.name
-        logger.debug(f"Saved audio ({audio.shape}, {sr}Hz) to temporary file: {temp_file_path}")
+        logger.info(f"Saved to temp file: {temp_file_path}")
         return temp_file_path
     except Exception as e:
         logger.exception("Failed to save temporary audio file.")
-        st.error(f"Failed to save temporary audio file: {e}")
+        st.error(f"Failed to save temp file: {e}")
         if temp_file_path and os.path.exists(temp_file_path):
             try:
                 os.remove(temp_file_path)
+                logger.debug(f"Cleaned up partial temp file: {temp_file_path}")
             except OSError as e_os:
-                logger.warning(f"Failed to clean up temp file {temp_file_path}: {e_os}")
+                logger.warning(f"Failed cleanup {temp_file_path}: {e_os}")
         return None
 
 
 def generate_binaural_beats(duration: float, freq_left: float, freq_right: float, sr: SampleRate, volume: float) -> AudioData:
-    """Generates stereo binaural beats."""
-    # (Implementation is the same as the previous version)
     logger.info(f"Generating binaural beats: dur={duration}s, L={freq_left}Hz, R={freq_right}Hz, vol={volume}")
     t = np.linspace(0, duration, int(sr * duration), endpoint=False)
     left = volume * np.sin(2 * np.pi * freq_left * t)
@@ -152,46 +149,38 @@ def generate_binaural_beats(duration: float, freq_left: float, freq_right: float
 
 
 def generate_solfeggio_frequency(duration: float, freq: float, sr: SampleRate, volume: float) -> AudioData:
-    """Generates a stereo sine wave at the solfeggio frequency."""
-    # (Implementation is the same as the previous version)
-    logger.info(f"Generating Solfeggio frequency: dur={duration}s, F={freq}Hz, vol={volume}")
+    logger.info(f"Generating Solfeggio: dur={duration}s, F={freq}Hz, vol={volume}")
     t = np.linspace(0, duration, int(sr * duration), endpoint=False)
     sine_wave = volume * np.sin(2 * np.pi * freq * t)
     audio = np.stack([sine_wave, sine_wave], axis=1).astype(np.float32)
     return np.clip(audio, -1.0, 1.0)
 
 
-# --- Effect Application Functions ---
 def apply_speed_change(audio: AudioData, sr: SampleRate, speed_factor: float) -> AudioData:
-    """Applies speed change using time stretching."""
-    # (Implementation is the same as the previous version - time_stretch)
-    logger.debug(f"Applying speed change with factor: {speed_factor} (time_stretch method)")
+    logger.debug(f"Applying speed change factor: {speed_factor} (time_stretch)")
     if np.any(np.isnan(audio)) or np.any(np.isinf(audio)):
-        logging.error("Audio data contains NaN or Inf values before time stretch. Skipping effect.")
-        st.error("Audio data contains NaN or Inf values before time stretch. Skipping effect.")
+        logging.error("NaN/Inf in audio data before time stretch.")
+        st.error("Bad audio data.")
         return audio
     if not np.isclose(speed_factor, 1.0):
         if speed_factor <= 0:
-            logging.warning(f"Invalid speed factor: {speed_factor}. Must be positive.")
-            st.warning("Speed factor must be positive.")
+            logging.warning(f"Invalid speed factor: {speed_factor}.")
+            st.warning("Speed > 0 required.")
             return audio
         try:
             if audio.size == 0:
                 return audio
-            logging.info(f"Applying speed change using time stretch (factor: {speed_factor})...")
+            logging.info(f"Applying time stretch (factor: {speed_factor})...")
             audio_stretched = librosa.effects.time_stretch(audio.T, rate=speed_factor)
-            logging.debug("Time stretch applied successfully.")
             return audio_stretched.T.astype(np.float32)
         except Exception as e:
-            logging.exception("Error applying speed change (time stretch method).")
-            st.error(f"Error applying speed change (time stretch method): {e}")
+            logging.exception("Error in time_stretch.")
+            st.error(f"Speed change failed: {e}")
             return audio
     return audio
 
 
 def apply_pitch_shift(audio: AudioData, sr: SampleRate, n_steps: float) -> AudioData:
-    """Applies pitch shift."""
-    # (Implementation is the same as the previous version)
     logger.debug(f"Applying pitch shift: {n_steps} semitones")
     if not np.isclose(n_steps, 0.0):
         try:
@@ -199,18 +188,15 @@ def apply_pitch_shift(audio: AudioData, sr: SampleRate, n_steps: float) -> Audio
                 return audio
             logging.info(f"Applying pitch shift ({n_steps} semitones)...")
             audio_shifted = librosa.effects.pitch_shift(audio.T, sr=sr, n_steps=n_steps)
-            logging.debug("Pitch shift applied successfully.")
             return audio_shifted.T.astype(np.float32)
         except Exception as e:
             logging.exception("Error applying pitch shift.")
-            st.error(f"Error applying pitch shift: {e}")
+            st.error(f"Pitch shift failed: {e}")
             return audio
     return audio
 
 
 def apply_filter(audio: AudioData, sr: SampleRate, filter_type: str, cutoff: float) -> AudioData:
-    """Applies low/high-pass filter."""
-    # (Implementation is the same as the previous version)
     logger.debug(f"Applying filter: type={filter_type}, cutoff={cutoff} Hz")
     if filter_type == "off" or cutoff <= 0:
         return audio
@@ -220,12 +206,12 @@ def apply_filter(audio: AudioData, sr: SampleRate, filter_type: str, cutoff: flo
         nyquist = 0.5 * sr
         normalized_cutoff = cutoff / nyquist
         if normalized_cutoff >= 1.0:
-            msg = f"Filter cutoff ({cutoff} Hz) >= Nyquist ({nyquist} Hz)."
+            msg = f"Filter cutoff ({cutoff}) >= Nyquist ({nyquist})."
             logging.warning(msg)
             st.warning(msg)
             return audio
         if normalized_cutoff <= 0:
-            msg = f"Filter cutoff ({cutoff} Hz) must be positive."
+            msg = f"Filter cutoff ({cutoff}) must be positive."
             logging.warning(msg)
             st.warning(msg)
             return audio
@@ -237,70 +223,65 @@ def apply_filter(audio: AudioData, sr: SampleRate, filter_type: str, cutoff: flo
             b, a = signal.butter(filter_order, normalized_cutoff, btype="high")
         else:
             logging.warning(f"Unknown filter type: {filter_type}")
-            st.warning(f"Unknown filter type: {filter_type}")
+            st.warning(f"Unknown filter: {filter_type}")
             return audio
         min_len_filtfilt = signal.filtfilt_coeffs(b, a)[-1].size * 3
         if audio.shape[0] <= min_len_filtfilt:
-            msg = f"Track too short ({audio.shape[0]} samples) for filter. Skipping."
+            msg = f"Track too short ({audio.shape[0]}) for filter. Skipping."
             logging.warning(msg)
             st.warning(msg)
             return audio
         audio_filtered = signal.filtfilt(b, a, audio, axis=0)
-        logging.debug("Filter applied successfully.")
         return audio_filtered.astype(np.float32)
     except Exception as e:
         logging.exception("Error applying filter.")
-        st.error(f"Error applying filter: {e}")
+        st.error(f"Filter failed: {e}")
         return audio
 
 
 def apply_all_effects(track_data: TrackData) -> AudioData:
-    """Applies all configured effects sequentially to original audio."""
-    # (Implementation is the same as the previous version)
     track_name = track_data.get("name", "Unnamed")
     logger.info(f"Applying all effects to track: '{track_name}'")
     audio = track_data.get("original_audio")
     if audio is None:
-        logging.error(f"Track '{track_name}' missing 'original_audio'.")
+        logging.error(f"'{track_name}' missing 'original_audio'.")
         return np.zeros((0, 2), dtype=np.float32)
     audio = audio.copy()
     sr = track_data.get("sr", GLOBAL_SR)
     if audio.size == 0:
-        logging.warning(f"Track '{track_name}' has no original audio data.")
+        logging.warning(f"'{track_name}' has no original audio.")
         return audio
     audio = apply_speed_change(audio, sr, track_data.get("speed_factor", 1.0))
     audio = apply_pitch_shift(audio, sr, track_data.get("pitch_shift", 0))
     audio = apply_filter(audio, sr, track_data.get("filter_type", "off"), track_data.get("filter_cutoff", 8000.0))
-    logging.info(f"Finished applying effects to track: '{track_name}'")
+    logger.info(f"Finished applying effects to '{track_name}'")
     return audio
 
 
 def mix_tracks(tracks_dict: Dict[TrackID, TrackData], preview: bool = False) -> AudioData:
-    """Mixes tracks based on current settings."""
-    # (Implementation is the same as the previous version)
-    logger.info(f"Starting track mixing. Preview mode: {preview}")
+    logger.info(f"Starting track mixing. Preview: {preview}")
     if not tracks_dict:
-        logging.warning("Mix command called but track dict is empty.")
+        logging.warning("Mix called but no tracks.")
         return np.zeros((0, 2), dtype=np.float32)
     tracks = tracks_dict.values()
     solo_active = any(t.get("solo", False) for t in tracks)
     active_tracks_data = [t for t in tracks if t.get("solo", False)] if solo_active else list(tracks)
     valid_tracks_to_mix = [t for t in active_tracks_data if not t.get("mute", False) and t.get("processed_audio", np.array([])).size > 0]
     if not valid_tracks_to_mix:
-        logging.warning("No valid tracks found to mix.")
+        logging.warning("No valid tracks to mix.")
         return np.zeros((0, 2), dtype=np.float32)
     try:
         max_len = max(len(t["processed_audio"]) for t in valid_tracks_to_mix)
-    except (ValueError, KeyError) as e:
-        logging.exception("Could not determine max length.")
+    except (ValueError, KeyError):
+        logging.exception("Could not get max length.")
         return np.zeros((0, 2), dtype=np.float32)
     if preview:
         max_len = min(max_len, int(GLOBAL_SR * 10)) if max_len > 0 else int(GLOBAL_SR * 10)
     if max_len <= 0:
-        logging.warning("Resulting mix length <= 0.")
+        logging.warning("Mix length <= 0.")
         return np.zeros((0, 2), dtype=np.float32)
     mix = np.zeros((max_len, 2), dtype=np.float32)
-    logger.info(f"Mixing {len(valid_tracks_to_mix)} tracks. Target length: {max_len / GLOBAL_SR:.2f}s")
+    logger.info(f"Mixing {len(valid_tracks_to_mix)} tracks. Len: {max_len / GLOBAL_SR:.2f}s")
     for t_data in valid_tracks_to_mix:
         audio = t_data["processed_audio"]
         current_len = len(audio)
@@ -332,22 +313,23 @@ def mix_tracks(tracks_dict: Dict[TrackID, TrackData], preview: bool = False) -> 
 class AppState:
     """Manages the application state, primarily the tracks dictionary stored in Streamlit session state."""
 
-    STATE_KEY = "tracks"  # Key used in st.session_state
+    STATE_KEY = "tracks"
 
     def __init__(self):
-        """Initializes the state, ensuring the track dictionary exists in session state."""
         if self.STATE_KEY not in st.session_state:
             logger.info(f"Initializing '{self.STATE_KEY}' in session state.")
             st.session_state[self.STATE_KEY] = {}
-        # Ensure existing tracks have the update_counter if loading from old state
+        # Ensure existing tracks have necessary keys from default params
+        default_keys = AppState.get_default_track_params().keys()
         for track_id, track_data in self.get_all_tracks().items():
-            if "update_counter" not in track_data:
-                st.session_state[self.STATE_KEY][track_id]["update_counter"] = 0
+            for key in default_keys:
+                if key not in track_data:
+                    logger.warning(f"Track {track_id} missing key '{key}', adding default.")
+                    st.session_state[self.STATE_KEY][track_id][key] = AppState.get_default_track_params()[key]
 
     @staticmethod
     def get_default_track_params() -> TrackData:
         """Returns a dictionary with default parameters for a new track."""
-        # --- MOVED HERE and made static ---
         return {
             "original_audio": np.zeros((0, 2), dtype=np.float32),
             "processed_audio": np.zeros((0, 2), dtype=np.float32),
@@ -357,87 +339,103 @@ class AppState:
             "mute": False,
             "solo": False,
             "speed_factor": 1.0,
-            "pitch_shift": 0,  # Semitones
-            "pan": 0.0,  # -1 (L) to 1 (R)
-            "filter_type": "off",  # 'off', 'lowpass', 'highpass'
-            "filter_cutoff": 8000.0,  # Hz
-            "temp_file_path": None,  # Potential future use
+            "pitch_shift": 0,
+            "pan": 0.0,
+            "filter_type": "off",
+            "filter_cutoff": 8000.0,
+            "temp_file_path": None,  # OPTIMIZATION: Store path to temp file for audix
             "update_counter": 0,  # For forcing audix refresh
         }
 
     def _get_tracks_dict(self) -> Dict[TrackID, TrackData]:
-        """Internal helper to safely get the tracks dictionary."""
         return st.session_state.get(self.STATE_KEY, {})
 
     def get_all_tracks(self) -> Dict[TrackID, TrackData]:
-        """Returns the dictionary of all current tracks."""
         return self._get_tracks_dict()
 
     def get_track(self, track_id: TrackID) -> Optional[TrackData]:
-        """Gets data for a specific track by ID."""
         return self._get_tracks_dict().get(track_id)
 
     def add_track(self, track_id: TrackID, track_data: TrackData):
-        """Adds a new track or updates an existing one."""
+        """Adds a new track, ensuring defaults and generating initial temp file."""
         if not isinstance(track_data, dict):
-            logger.error(f"Attempted to add non-dict track data for ID {track_id}")
+            logger.error(f"Invalid track data type for {track_id}")
             return
-        # Ensure default parameters are present if missing
-        default_params = AppState.get_default_track_params()  # Use static method
-        for key, default_value in default_params.items():
-            if key not in track_data:
-                track_data[key] = default_value
+        default_params = AppState.get_default_track_params()
+        # Ensure all default keys exist
+        final_track_data = {**default_params, **track_data}  # Merge, prioritizing provided data
 
-        st.session_state[self.STATE_KEY][track_id] = track_data
-        logger.info(f"Added/Updated track ID: {track_id}, Name: '{track_data.get('name', 'N/A')}'")
+        # --- OPTIMIZATION: Generate initial temp file ---
+        initial_audio = final_track_data.get("processed_audio")
+        initial_sr = final_track_data.get("sr", GLOBAL_SR)
+        if initial_audio is not None and initial_audio.size > 0:
+            initial_temp_path = save_audio_to_temp(initial_audio, initial_sr)
+            if initial_temp_path:
+                final_track_data["temp_file_path"] = initial_temp_path
+            else:
+                logger.error(f"Failed to create initial temp file for track {track_id}")
+                final_track_data["temp_file_path"] = None  # Ensure it's None if saving failed
+        else:
+            final_track_data["temp_file_path"] = None  # No audio, no temp file needed yet
+        # --------------------------------------------
+
+        st.session_state[self.STATE_KEY][track_id] = final_track_data
+        logger.info(f"Added track ID: {track_id}, Name: '{final_track_data.get('name', 'N/A')}'")
 
     def delete_track(self, track_id: TrackID):
-        """Deletes a track by ID."""
+        """Deletes a track and cleans up its temporary file."""
         tracks = self._get_tracks_dict()
         if track_id in tracks:
-            track_name = tracks[track_id].get("name", "N/A")
+            track_data = tracks[track_id]
+            track_name = track_data.get("name", "N/A")
+            temp_file_to_delete = track_data.get("temp_file_path")
+
+            # --- OPTIMIZATION: Delete associated temp file ---
+            if temp_file_to_delete and os.path.exists(temp_file_to_delete):
+                try:
+                    os.remove(temp_file_to_delete)
+                    logger.info(f"Deleted temp file '{temp_file_to_delete}' for track {track_id}")
+                except OSError as e_os:
+                    logger.warning(f"Failed to delete temp file '{temp_file_to_delete}' for track {track_id}: {e_os}")
+            # --------------------------------------------
+
             del st.session_state[self.STATE_KEY][track_id]
             logger.info(f"Deleted track ID: {track_id}, Name: '{track_name}'")
             return True
         else:
-            logger.warning(f"Attempted to delete non-existent track ID: {track_id}")
+            logger.warning(f"Attempted delete non-existent track ID: {track_id}")
             return False
 
     def update_track_param(self, track_id: TrackID, param_name: str, value: Any):
         """Updates a specific parameter for a given track."""
         tracks = self._get_tracks_dict()
         if track_id in tracks:
-            # Check if param_name exists in the default structure for safety
             if param_name in AppState.get_default_track_params():
                 st.session_state[self.STATE_KEY][track_id][param_name] = value
-                # Avoid overly verbose logging for slider drags, etc.
-                # logger.debug(f"Updated param '{param_name}' for track ID {track_id} to: {value}")
             else:
-                logger.warning(f"Attempted to update potentially invalid param '{param_name}' for track ID: {track_id}")
+                logger.warning(f"Attempted update invalid param '{param_name}' for track {track_id}")
         else:
-            logger.warning(f"Attempted to update param for non-existent track ID: {track_id}")
+            logger.warning(f"Attempted update param for non-existent track {track_id}")
 
     def increment_update_counter(self, track_id: TrackID):
-        """Increments the update counter for a track to force UI refresh."""
+        """Increments the update counter for a track."""
         tracks = self._get_tracks_dict()
         if track_id in tracks:
             current_counter = tracks[track_id].get("update_counter", 0)
             new_counter = current_counter + 1
             st.session_state[self.STATE_KEY][track_id]["update_counter"] = new_counter
-            logger.debug(f"Incremented update_counter for track ID {track_id} to {new_counter}")
+            logger.debug(f"Incremented update_counter for track {track_id} to {new_counter}")
         else:
-            logger.warning(f"Attempted to increment counter for non-existent track ID: {track_id}")
+            logger.warning(f"Attempted increment counter for non-existent track {track_id}")
 
     def get_loaded_track_names(self) -> List[str]:
-        """Gets a list of names of currently loaded tracks."""
         return [t.get("name") for t in self.get_all_tracks().values() if t.get("name")]
 
 
 # ==========================================
 # 3. TTS Generation (Class Wrapper)
 # ==========================================
-
-
+# (TTSGenerator class remains the same as previous OOP version)
 class TTSGenerator:
     """Handles Text-to-Speech generation using pyttsx3."""
 
@@ -446,53 +444,51 @@ class TTSGenerator:
         logger.debug("TTSGenerator initialized.")
 
     def _init_engine(self):
-        """Initializes the pyttsx3 engine if not already done."""
         if self.engine is None:
             try:
                 logger.debug("Initializing pyttsx3 engine.")
                 self.engine = pyttsx3.init()
             except Exception as e:
-                logger.exception("Failed to initialize pyttsx3 engine.")
+                logger.exception("Failed init pyttsx3.")
                 self.engine = None
                 raise
 
     def generate(self, text: str) -> Tuple[Optional[AudioData], Optional[SampleRate]]:
-        """Generates audio from text, saves to temp file, loads, and cleans up."""
         logger.info("Starting TTS generation.")
-        if not text:
-            logger.warning("TTS generation requested with empty text.")
-            return None, None
         tts_filename = None
+        if not text:
+            logger.warning("Empty TTS text.")
+            return None, None
         try:
             self._init_engine()
             if self.engine is None:
-                st.error("TTS Engine failed to initialize.")
+                st.error("TTS Engine failed.")
                 return None, None
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
-                tts_filename = tmp_file.name
-            logger.debug(f"Saving TTS to temporary file: {tts_filename}")
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                tts_filename = tmp.name
+            logger.debug(f"Saving TTS to temp: {tts_filename}")
             self.engine.save_to_file(text, tts_filename)
             self.engine.runAndWait()
-            logger.debug(f"Loading generated TTS audio from {tts_filename}")
+            logger.debug(f"Loading generated TTS from {tts_filename}")
             with open(tts_filename, "rb") as f:
                 tts_bytes_io = BytesIO(f.read())
             audio, sr = load_audio(tts_bytes_io, target_sr=GLOBAL_SR)
             if audio.size == 0:
-                logger.error("TTS empty audio file.")
+                logger.error("TTS empty audio.")
                 raise ValueError("TTS generated empty file.")
             logger.info("TTS generation successful.")
             return audio, sr
         except Exception as e:
-            logger.exception("TTS Generation or Loading Failed.")
+            logger.exception("TTS Failed.")
             st.error(f"TTS Failed: {e}")
             return None, None
         finally:
             if tts_filename and os.path.exists(tts_filename):
                 try:
                     os.remove(tts_filename)
-                    logger.debug(f"Cleaned up temp TTS file: {tts_filename}")
-                except OSError as e_os:
-                    logger.warning(f"Could not delete temp TTS file {tts_filename}: {e_os}")
+                    logger.debug(f"Cleaned temp TTS: {tts_filename}")
+                except OSError as e:
+                    logger.warning(f"Could not delete temp TTS {tts_filename}: {e}")
 
 
 # ==========================================
@@ -523,85 +519,81 @@ class UIManager:
     def _render_uploader(self):
         """Renders the file uploader section."""
         st.subheader("📁 Upload Audio")
-        uploaded_files = st.file_uploader("Upload WAV, MP3, OGG, FLAC files", type=["wav", "mp3", "ogg", "flac"], accept_multiple_files=True, key="upload_files_key")
+        uploaded_files = st.file_uploader("Upload WAV, MP3, OGG, FLAC", type=["wav", "mp3", "ogg", "flac"], accept_multiple_files=True, key="upload_files_key")
         loaded_track_names = self.app_state.get_loaded_track_names()
         if uploaded_files:
             for file in uploaded_files:
                 if file.name not in loaded_track_names:
-                    logger.info(f"Processing uploaded file: {file.name}")
+                    logger.info(f"Processing upload: {file.name}")
                     with st.spinner(f"Loading {file.name}..."):
                         audio, sr = load_audio(file, target_sr=GLOBAL_SR)
                     if audio.size > 0:
                         track_id = str(uuid.uuid4())
-                        # Use AppState static method to get defaults
-                        track_params = AppState.get_default_track_params()
+                        track_params = AppState.get_default_track_params()  # Use static method
                         track_params.update({"original_audio": audio, "processed_audio": audio.copy(), "sr": sr, "name": file.name})
-                        self.app_state.add_track(track_id, track_params)
+                        self.app_state.add_track(track_id, track_params)  # add_track now handles initial temp file
                         st.success(f"Loaded '{file.name}'")
                         loaded_track_names.append(file.name)
                     else:
-                        logger.warning(f"Skipped empty/failed track from upload: {file.name}")
-                        st.warning(f"Skipped empty or failed track: {file.name}")
+                        logger.warning(f"Skipped empty upload: {file.name}")
+                        st.warning(f"Skipped empty: {file.name}")
 
     def _render_tts_generator(self):
         """Renders the TTS generation section."""
         st.subheader("🗣️ Generate Affirmations (TTS)")
-        affirmation_text = st.text_area("Enter Affirmations (one per line)", height=100, key="affirmation_text")
+        affirmation_text = st.text_area("Enter Affirmations", height=100, key="affirmation_text")
         if st.button("Generate TTS Audio", key="generate_tts_key"):
             if affirmation_text:
-                with st.spinner("Generating and loading TTS audio..."):
+                with st.spinner("Generating TTS..."):
                     audio, sr = self.tts_generator.generate(affirmation_text)
-                    if audio is not None and sr is not None:
-                        track_id = str(uuid.uuid4())
-                        # Use AppState static method to get defaults
-                        track_params = AppState.get_default_track_params()
-                        track_params.update({"original_audio": audio, "processed_audio": audio.copy(), "sr": sr, "name": "Affirmations"})
-                        self.app_state.add_track(track_id, track_params)
-                        st.success("Affirmations track generated!")
+                if audio is not None and sr is not None:
+                    track_id = str(uuid.uuid4())
+                    track_params = AppState.get_default_track_params()
+                    track_params.update({"original_audio": audio, "processed_audio": audio.copy(), "sr": sr, "name": "Affirmations"})
+                    self.app_state.add_track(track_id, track_params)  # add_track handles initial temp file
+                    st.success("Affirmations track generated!")
             else:
-                st.warning("Please enter some text for affirmations.")
+                st.warning("Please enter text.")
 
     def _render_binaural_generator(self):
         """Renders the Binaural Beats generation section."""
         st.subheader("🧠 Generate Binaural Beats")
         bb_cols = st.columns(2)
-        bb_duration = bb_cols[0].number_input("Duration (s)", min_value=1, value=60, step=1, key="bb_duration")
-        bb_vol = bb_cols[1].slider("Volume##BB", 0.0, 1.0, 0.3, step=0.05, key="bb_volume")
-        bb_freq_cols = st.columns(2)
-        bb_freq_left = bb_freq_cols[0].number_input("Left Freq (Hz)", min_value=20, max_value=1000, value=200, step=1, key="bb_freq_left")
-        bb_freq_right = bb_freq_cols[1].number_input("Right Freq (Hz)", min_value=20, max_value=1000, value=210, step=1, key="bb_freq_right")
+        bb_duration = bb_cols[0].number_input("Duration (s)", 1, 60, 60, 1, key="bb_duration")
+        bb_vol = bb_cols[1].slider("Volume##BB", 0.0, 1.0, 0.3, 0.05, key="bb_volume")
+        bb_fcols = st.columns(2)
+        bb_fleft = bb_fcols[0].number_input("Left Freq (Hz)", 20, 1000, 200, 1, key="bb_freq_left")
+        bb_fright = bb_fcols[1].number_input("Right Freq (Hz)", 20, 1000, 210, 1, key="bb_freq_right")
         if st.button("Generate Binaural Beats", key="generate_bb"):
-            with st.spinner("Generating Binaural Beats..."):
-                audio = generate_binaural_beats(bb_duration, bb_freq_left, bb_freq_right, GLOBAL_SR, bb_vol)
-                track_id = str(uuid.uuid4())
-                # Use AppState static method to get defaults
-                track_params = AppState.get_default_track_params()
-                track_params.update({"original_audio": audio, "processed_audio": audio.copy(), "sr": GLOBAL_SR, "name": f"Binaural {bb_freq_left}/{bb_freq_right}Hz"})
-                self.app_state.add_track(track_id, track_params)
-                st.success("Binaural Beats track generated!")
+            with st.spinner("Generating..."):
+                audio = generate_binaural_beats(bb_duration, bb_fleft, bb_fright, GLOBAL_SR, bb_vol)
+            track_id = str(uuid.uuid4())
+            track_params = AppState.get_default_track_params()
+            track_params.update({"original_audio": audio, "processed_audio": audio.copy(), "sr": GLOBAL_SR, "name": f"Binaural {bb_fleft}/{bb_fright}Hz"})
+            self.app_state.add_track(track_id, track_params)
+            st.success("Binaural Beats generated!")
 
     def _render_solfeggio_generator(self):
         """Renders the Solfeggio Frequency generation section."""
         st.subheader("✨ Generate Solfeggio Frequency")
-        solfeggio_freqs = [174, 285, 396, 417, 528, 639, 741, 852, 963]
-        solf_cols = st.columns(2)
-        solf_freq = solf_cols[0].selectbox("Frequency (Hz)", solfeggio_freqs, index=4, key="solf_freq")
-        solf_duration = solf_cols[1].number_input("Duration (s)##Solf", min_value=1, value=60, step=1, key="solf_duration")
-        solf_volume = st.slider("Volume##Solf", 0.0, 1.0, 0.3, step=0.05, key="solf_volume")
+        freqs = [174, 285, 396, 417, 528, 639, 741, 852, 963]
+        cols = st.columns(2)
+        freq = cols[0].selectbox("Freq (Hz)", freqs, index=4, key="solf_freq")
+        duration = cols[1].number_input("Duration (s)##Solf", 1, 60, 60, 1, key="solf_duration")
+        vol = st.slider("Volume##Solf", 0.0, 1.0, 0.3, 0.05, key="solf_volume")
         if st.button("Generate Solfeggio Track", key="generate_solf"):
-            with st.spinner("Generating Solfeggio Track..."):
-                audio = generate_solfeggio_frequency(solf_duration, solf_freq, GLOBAL_SR, solf_volume)
-                track_id = str(uuid.uuid4())
-                # Use AppState static method to get defaults
-                track_params = AppState.get_default_track_params()
-                track_params.update({"original_audio": audio, "processed_audio": audio.copy(), "sr": GLOBAL_SR, "name": f"Solfeggio {solf_freq}Hz"})
-                self.app_state.add_track(track_id, track_params)
-                st.success(f"Solfeggio {solf_freq}Hz track generated!")
+            with st.spinner("Generating..."):
+                audio = generate_solfeggio_frequency(duration, freq, GLOBAL_SR, vol)
+            track_id = str(uuid.uuid4())
+            track_params = AppState.get_default_track_params()
+            track_params.update({"original_audio": audio, "processed_audio": audio.copy(), "sr": GLOBAL_SR, "name": f"Solfeggio {freq}Hz"})
+            self.app_state.add_track(track_id, track_params)
+            st.success(f"Solfeggio {freq}Hz generated!")
 
     def render_tracks_editor(self):
         """Renders the main editor area with all tracks."""
         st.header("🎚️ Tracks Editor")
-        st.markdown("Adjust settings below. Volume/Pan are live. Speed/Pitch/Filter require 'Apply Effects'.")
+        st.markdown("Adjust settings. Vol/Pan live. Others need 'Apply Effects'.")
         st.divider()
         tracks = self.app_state.get_all_tracks()
         if not tracks:
@@ -612,9 +604,9 @@ class UIManager:
         for track_id, track_data in list(tracks.items()):
             if track_id not in self.app_state.get_all_tracks():
                 continue
-            track_name_safe = track_data.get("name", "Unnamed")
-            with st.expander(f"Track: **{track_name_safe}** (`{track_id[:6]}`)", expanded=True):
-                logger.debug(f"Rendering expander for track: '{track_name_safe}' ({track_id})")
+            track_name = track_data.get("name", "Unnamed")
+            with st.expander(f"Track: **{track_name}** (`{track_id[:6]}`)", expanded=True):
+                logger.debug(f"Rendering expander for: '{track_name}' ({track_id})")
                 col_main, col_controls = st.columns([3, 1])
                 self._render_track_main_col(track_id, track_data, col_main)
                 deleted = self._render_track_controls_col(track_id, track_data, col_controls)
@@ -624,7 +616,7 @@ class UIManager:
             deleted_count = 0
             for tid in track_ids_to_delete:
                 if self.app_state.delete_track(tid):
-                    deleted_count += 1
+                    deleted_count += 1  # delete_track handles cleanup
             if deleted_count > 0:
                 st.toast(f"Deleted {deleted_count} track(s).")
                 st.rerun()
@@ -633,33 +625,61 @@ class UIManager:
         """Renders the waveform and effects controls for a single track."""
         with column:
             try:
-                processed_audio_len = len(track_data.get("processed_audio", []))
+                processed_audio = track_data.get("processed_audio")
                 track_sr = track_data.get("sr", GLOBAL_SR)
-                track_len_sec = processed_audio_len / track_sr if track_sr > 0 else 0
-                st.caption(f"Sample Rate: {track_sr} Hz | Length: {track_len_sec:.2f}s")
-                # Waveform Visualization
-                audio_to_display = track_data.get("processed_audio")
-                if audio_to_display is not None and audio_to_display.size > 0:
-                    temp_wav_path = save_audio_to_temp(audio_to_display, track_sr)
-                    if temp_wav_path:
-                        ws_options = WaveSurferOptions(
-                            height=100, normalize=True, wave_color="#A020F0", progress_color="#800080", cursor_color="#333333", cursor_width=1, bar_width=2, bar_gap=1
-                        )
-                        update_count = track_data.get("update_counter", 0)
-                        audix_key = f"audix_{track_id}_{update_count}"
-                        logger.debug(f"Calling audix for track '{track_data.get('name', 'N/A')}' with key: {audix_key}")
-                        audix(data=temp_wav_path, sample_rate=track_sr, wavesurfer_options=ws_options, key=audix_key)
-                    else:
-                        st.error("Could not display waveform (failed to save temp file).")
+                track_len_sec = len(processed_audio) / track_sr if processed_audio is not None and track_sr > 0 else 0
+                st.caption(f"SR: {track_sr} Hz | Len: {track_len_sec:.2f}s")
+
+                # --- Waveform Visualization (Optimized Temp File Handling) ---
+                current_temp_file = track_data.get("temp_file_path")
+                display_path = None
+                regenerate_temp_file = False
+
+                if current_temp_file and os.path.exists(current_temp_file):
+                    display_path = current_temp_file
+                    logger.debug(f"Using existing temp file for audix: {display_path}")
                 else:
-                    st.info("Track has no audio data to display.")
+                    if current_temp_file:
+                        logger.warning(f"Temp file path found ('{current_temp_file}') but file missing. Regenerating.")
+                    else:
+                        logger.debug(f"No temp file path found for track {track_id}. Will generate.")
+                    regenerate_temp_file = True
+
+                if regenerate_temp_file:
+                    if processed_audio is not None and processed_audio.size > 0:
+                        new_temp_path = save_audio_to_temp(processed_audio, track_sr)
+                        if new_temp_path:
+                            self.app_state.update_track_param(track_id, "temp_file_path", new_temp_path)
+                            display_path = new_temp_path
+                            # If old file existed but was invalid, try deleting it (AppState handles delete on track removal)
+                            if current_temp_file and current_temp_file != new_temp_path and os.path.exists(current_temp_file):
+                                try:
+                                    os.remove(current_temp_file)
+                                    logger.info(f"Cleaned up invalid old temp file: {current_temp_file}")
+                                except OSError as e:
+                                    logger.warning(f"Could not remove invalid old temp file {current_temp_file}: {e}")
+                        else:
+                            st.error("Failed to regenerate temp file for waveform.")
+                    else:
+                        st.info("Track has no audio data to display waveform.")
+
+                if display_path:
+                    ws_options = WaveSurferOptions(
+                        height=100, normalize=True, wave_color="#A020F0", progress_color="#800080", cursor_color="#333333", cursor_width=1, bar_width=2, bar_gap=1
+                    )
+                    update_count = track_data.get("update_counter", 0)
+                    audix_key = f"audix_{track_id}_{update_count}"
+                    logger.debug(f"Calling audix for '{track_data.get('name', 'N/A')}' key={audix_key} path={display_path}")
+                    audix(data=display_path, sample_rate=track_sr, wavesurfer_options=ws_options, key=audix_key)
+                # -------------------------------------------------------------
+
                 st.markdown("**Effects** (Require 'Apply Effects' Button)")
                 fx_col1, fx_col2, fx_col3 = st.columns(3)
                 # Effect Sliders - Update state directly via AppState
                 speed = fx_col1.slider("Speed", 0.25, 4.0, track_data.get("speed_factor", 1.0), step=0.05, key=f"speed_{track_id}", help="Changes speed (>1 faster, <1 slower).")
                 if speed != track_data.get("speed_factor"):
                     self.app_state.update_track_param(track_id, "speed_factor", speed)
-                pitch = fx_col2.slider("Pitch Shift (semitones)", -12, 12, track_data.get("pitch_shift", 0), step=1, key=f"pitch_{track_id}", help="Changes pitch.")
+                pitch = fx_col2.slider("Pitch (semitones)", -12, 12, track_data.get("pitch_shift", 0), step=1, key=f"pitch_{track_id}", help="Changes pitch.")
                 if pitch != track_data.get("pitch_shift"):
                     self.app_state.update_track_param(track_id, "pitch_shift", pitch)
                 f_type = fx_col3.selectbox(
@@ -670,28 +690,47 @@ class UIManager:
                 f_enabled = track_data["filter_type"] != "off"
                 max_cutoff = track_sr / 2 - 1
                 f_cutoff = fx_col3.number_input(
-                    f"Cutoff ({'Hz' if f_enabled else 'Disabled'})",
+                    f"Cutoff ({'Hz' if f_enabled else 'Off'})",
                     min_value=20.0,
                     max_value=max_cutoff if max_cutoff > 20 else 20.0,
                     value=float(track_data.get("filter_cutoff", 8000.0)),
                     step=100.0,
                     key=f"filter_cutoff_{track_id}",
                     disabled=not f_enabled,
-                    help="Filter cutoff frequency.",
+                    help="Filter cutoff freq.",
                 )
                 if f_cutoff != track_data.get("filter_cutoff"):
                     self.app_state.update_track_param(track_id, "filter_cutoff", f_cutoff)
-                # Apply Effects Button
+
+                # --- Apply Effects Button (Optimized Temp File Handling) ---
                 if st.button("⚙️ Apply Effects", key=f"apply_fx_{track_id}", help="Apply Speed, Pitch, Filter changes."):
-                    logger.info(f"Apply Effects button clicked for track: '{track_data.get('name', 'N/A')}' ({track_id})")
+                    logger.info(f"Apply Effects clicked for: '{track_data.get('name', 'N/A')}' ({track_id})")
                     original_audio = track_data.get("original_audio")
                     if original_audio is not None and original_audio.size > 0:
                         with st.spinner(f"Applying effects..."):
-                            processed_audio = apply_all_effects(track_data)
-                            self.app_state.update_track_param(track_id, "processed_audio", processed_audio)
-                            self.app_state.increment_update_counter(track_id)
-                        st.success(f"Effects applied.")
-                        st.rerun()
+                            processed_audio = apply_all_effects(track_data)  # Calculate new audio
+                            old_temp_file = track_data.get("temp_file_path")  # Get path of current temp file
+                            new_temp_file = save_audio_to_temp(processed_audio, track_sr)  # Save new audio to new temp file
+
+                            if new_temp_file:
+                                # Update state with new audio and new temp file path
+                                self.app_state.update_track_param(track_id, "processed_audio", processed_audio)
+                                self.app_state.update_track_param(track_id, "temp_file_path", new_temp_file)
+                                self.app_state.increment_update_counter(track_id)  # Increment counter for key change
+
+                                # Delete the OLD temp file now that new one is saved
+                                if old_temp_file and os.path.exists(old_temp_file):
+                                    try:
+                                        os.remove(old_temp_file)
+                                        logger.info(f"Deleted old temp file: {old_temp_file}")
+                                    except OSError as e:
+                                        logger.warning(f"Could not delete old temp file {old_temp_file}: {e}")
+                                st.success(f"Effects applied.")
+                            else:
+                                logger.error(f"Failed to save new temp file after applying effects for track {track_id}")
+                                st.error("Failed to save updated audio. Effects not fully applied.")
+                                # Don't increment counter or update state if save failed
+                        st.rerun()  # Rerun to display new waveform etc.
                     else:
                         st.warning(f"Cannot apply effects: Track has no original audio data.")
             except Exception as e:
@@ -699,20 +738,19 @@ class UIManager:
                 st.error(f"Error displaying waveform/effects: {e}")
 
     def _render_track_controls_col(self, track_id: TrackID, track_data: TrackData, column: st.delta_generator.DeltaGenerator) -> bool:
-        """Renders the controls (name, vol, pan, etc.) for a single track. Returns True if delete was clicked."""
+        """Renders the controls (name, vol, pan, etc.). Returns True if delete clicked."""
         delete_clicked = False
         with column:
             try:
                 st.markdown("**Track Controls**")
-                # Update state directly via AppState
                 name = st.text_input("Name", value=track_data.get("name", "Unnamed"), key=f"name_{track_id}")
                 if name != track_data.get("name"):
                     self.app_state.update_track_param(track_id, "name", name)
                 vp_col1, vp_col2 = st.columns(2)
-                vol = vp_col1.slider("Volume", 0.0, 2.0, track_data.get("volume", 1.0), step=0.05, key=f"vol_{track_id}", help="Live volume adjustment.")
+                vol = vp_col1.slider("Volume", 0.0, 2.0, track_data.get("volume", 1.0), 0.05, key=f"vol_{track_id}", help="Live volume.")
                 if vol != track_data.get("volume"):
                     self.app_state.update_track_param(track_id, "volume", vol)
-                pan = vp_col2.slider("Pan", -1.0, 1.0, track_data.get("pan", 0.0), step=0.1, key=f"pan_{track_id}", help="Live stereo balance.")
+                pan = vp_col2.slider("Pan", -1.0, 1.0, track_data.get("pan", 0.0), 0.1, key=f"pan_{track_id}", help="Live stereo balance.")
                 if pan != track_data.get("pan"):
                     self.app_state.update_track_param(track_id, "pan", pan)
                 ms_col1, ms_col2 = st.columns(2)
@@ -727,12 +765,13 @@ class UIManager:
                     delete_clicked = True
                     st.warning(f"Track marked for deletion.")
             except Exception as e:
-                logger.exception(f"Error rendering controls column for track {track_id}")
-                st.error(f"Error displaying controls: {e}")
+                logger.exception(f"Error rendering controls for track {track_id}")
+                st.error(f"Error controls: {e}")
         return delete_clicked
 
     def render_master_controls(self):
         """Renders the master preview and export buttons."""
+        # (Implementation is the same as the previous OOP version)
         st.divider()
         st.header("🔊 Master Output")
         master_cols = st.columns(2)
@@ -774,6 +813,7 @@ class UIManager:
 
     def render_instructions(self):
         """Renders the instructions expander."""
+        # (Implementation is the same as the previous OOP version)
         st.divider()
         with st.expander("📖 Show Instructions & Notes", expanded=False):
             st.markdown("""
@@ -793,8 +833,7 @@ class UIManager:
 # ==========================================
 # 5. Benchmarking (Placeholder Class)
 # ==========================================
-
-
+# (Benchmarker class remains the same as previous OOP version)
 class Benchmarker:
     """Placeholder for performance benchmarking."""
 
@@ -803,15 +842,14 @@ class Benchmarker:
         logger.debug("Benchmarker initialized.")
 
     def benchmark_tts(self, word_count: int = 10000, repetitions: int = 1):
-        """Benchmarks TTS generation for a given number of words."""
-        logger.info(f"Starting TTS benchmark: {word_count} words, {repetitions} repetitions.")
+        logger.info(f"Starting TTS benchmark: {word_count} words, {repetitions} reps.")
         st.subheader(f"Benchmark: TTS Generation ({word_count} words)")
         if word_count <= 0:
             st.warning("Word count must be positive.")
             return
         placeholder_word = "benchmark "
         text = (placeholder_word * (word_count // len(placeholder_word) + 1))[: word_count * 6]
-        st.text(f"Generating {len(text)} chars (approx {word_count} words)...")
+        st.text(f"Generating ~{word_count} words...")
         total_time = 0
         min_time = float("inf")
         max_time = 0
@@ -855,12 +893,10 @@ class Benchmarker:
 def main():
     """Main function to run the Streamlit application."""
     logger.info("Starting main application function.")
-    # Initialize state and components
     app_state = AppState()
     tts_generator = TTSGenerator()
     ui_manager = UIManager(app_state, tts_generator)
-    # benchmarker = Benchmarker(tts_generator)
-    # Render UI sections
+    benchmarker = Benchmarker(tts_generator)
     ui_manager.render_sidebar()
     ui_manager.render_tracks_editor()
     ui_manager.render_master_controls()
@@ -870,11 +906,9 @@ def main():
         st.info("Run performance tests. May take time.")
         bm_words = st.number_input("Words for TTS Benchmark", 100, 20000, 10000, 100)
         bm_reps = st.number_input("Repetitions", 1, 10, 1, 1)
-        # if st.button("Run TTS Benchmark"):
-        # benchmarker.benchmark_tts(bm_words, bm_reps)
-    # Instructions
+        if st.button("Run TTS Benchmark"):
+            benchmarker.benchmark_tts(bm_words, bm_reps)
     ui_manager.render_instructions()
-    # Footer
     st.divider()
     st.caption("Pro Subliminal Audio Editor (OOP) - Built with Streamlit")
     logger.info("Reached end of main application function render.")
@@ -884,4 +918,4 @@ if __name__ == "__main__":
     main()
     # Attempt to stop listener - might not execute reliably in Streamlit
     # logger.info("Attempting to stop logging listener.")
-    # listener.stop()
+    # if 'listener' in locals() and listener is not None: listener.stop()

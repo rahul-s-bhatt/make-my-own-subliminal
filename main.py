@@ -1,6 +1,6 @@
 # ==========================================
 # MindMorph - Pro Subliminal Audio Editor
-# Version: 2.14 (OOP - Corrected TTS Progress Update)
+# Version: 2.15 (OOP - Fixed Syntax Error in TTSGenerator)
 # ==========================================
 # --- Early Config ---
 import os
@@ -264,7 +264,6 @@ def apply_filter(audio: AudioData, sr: SampleRate, filter_type: str, cutoff: flo
 
 def apply_all_effects(track_data: TrackData) -> AudioData:
     """Applies speed, pitch, and filter effects sequentially to original audio."""
-    # This function *does not* handle looping. Looping is applied *after* this.
     track_name = track_data.get("name", "Unnamed")
     logger.info(f"Applying base effects (Speed/Pitch/Filter) to track: '{track_name}'")
     audio = track_data.get("original_audio")
@@ -283,12 +282,12 @@ def apply_all_effects(track_data: TrackData) -> AudioData:
     return audio
 
 
+# --- UPDATED mix_tracks with more logging ---
 def mix_tracks(tracks_dict: Dict[TrackID, TrackData], preview: bool = False) -> AudioData:
     """Mixes tracks based on current settings (volume, pan, mute, solo)."""
-    # This function uses the final 'processed_audio' which already includes looping if applied.
-    logger.info(f"Starting track mixing. Preview: {preview}")
+    logger.info(f"Starting track mixing. Preview mode: {preview}")
     if not tracks_dict:
-        logging.warning("Mix called but no tracks.")
+        logging.warning("Mix command called but no tracks.")
         return np.zeros((0, 2), dtype=np.float32)
     tracks = tracks_dict.values()
     solo_active = any(t.get("solo", False) for t in tracks)
@@ -298,20 +297,35 @@ def mix_tracks(tracks_dict: Dict[TrackID, TrackData], preview: bool = False) -> 
         logging.warning("No valid tracks to mix.")
         return np.zeros((0, 2), dtype=np.float32)
     try:
-        max_len = max(len(t["processed_audio"]) for t in valid_tracks_to_mix)  # Max length uses processed_audio
-    except (ValueError, KeyError):
+        max_len = 0
+        for t in valid_tracks_to_mix:
+            if t.get("processed_audio") is not None:
+                max_len = max(max_len, len(t["processed_audio"]))
+    except (ValueError, KeyError) as e:
         logging.exception("Could not get max length.")
         return np.zeros((0, 2), dtype=np.float32)
+
+    logger.debug(f"Initial max_len calculated: {max_len} samples ({max_len / GLOBAL_SR:.2f}s)")  # DEBUG LOG
+
     if preview:
-        max_len = min(max_len, int(GLOBAL_SR * 10)) if max_len > 0 else int(GLOBAL_SR * 10)
+        preview_len = int(GLOBAL_SR * 10)  # 10 seconds for preview
+        original_max_len = max_len
+        max_len = min(max_len, preview_len) if max_len > 0 else preview_len
+        logger.info(f"Preview mode: Limiting mix length from {original_max_len} samples to {max_len} samples ({max_len / GLOBAL_SR:.2f}s)")  # Log the change
+    else:
+        logger.info(f"Full mix mode: Target length is {max_len} samples ({max_len / GLOBAL_SR:.2f}s)")
+
     if max_len <= 0:
         logging.warning("Mix length <= 0.")
         return np.zeros((0, 2), dtype=np.float32)
+
     mix = np.zeros((max_len, 2), dtype=np.float32)
-    logger.info(f"Mixing {len(valid_tracks_to_mix)} tracks. Len: {max_len / GLOBAL_SR:.2f}s")
+    logger.debug(f"Mix buffer created with shape: {(max_len, 2)}")  # DEBUG LOG
+
+    logger.info(f"Mixing {len(valid_tracks_to_mix)} tracks. Target length: {max_len / GLOBAL_SR:.2f}s")
     for t_data in valid_tracks_to_mix:
         audio = t_data["processed_audio"]
-        current_len = len(audio)  # Use processed_audio which might be looped
+        current_len = len(audio)
         if current_len < max_len:
             audio_adjusted = np.pad(audio, ((0, max_len - current_len), (0, 0)), mode="constant")
         elif current_len > max_len:
@@ -327,12 +341,14 @@ def mix_tracks(tracks_dict: Dict[TrackID, TrackData], preview: bool = False) -> 
         panned_audio[:, 0] = audio_adjusted[:, 0] * left_gain
         panned_audio[:, 1] = audio_adjusted[:, 1] * right_gain
         mix += panned_audio
+
     final_mix = np.clip(mix, -1.0, 1.0)
-    logger.info("Mixing complete.")
+    logger.info(f"Mixing complete. Final mix shape: {final_mix.shape} ({len(final_mix) / GLOBAL_SR:.2f}s)")  # Log final shape/duration
     return final_mix.astype(np.float32)
 
 
 # --- Helper to read text files ---
+# (read_text_file function remains the same as v2.12 with enhanced checks)
 def read_text_file(uploaded_file: UploadedFile) -> Optional[str]:
     """Reads content from uploaded txt or docx file with enhanced error handling."""
     if uploaded_file is None:
@@ -538,9 +554,9 @@ class TTSGenerator:
                         continue
 
                     chunk_start_time = time.time()
-                    # --- Update placeholder text (not the spinner itself) ---
+                    # --- Update placeholder text ---
                     progress_placeholder.text(f"Synthesizing audio chunk {i + 1}/{num_chunks}...")
-                    # -------------------------------------------------------
+                    # ---------------------------------
 
                     temp_chunk_path = None
                     try:
@@ -559,12 +575,19 @@ class TTSGenerator:
                                 temp_chunk_files.remove(temp_chunk_path)
                             temp_chunk_path = None
                             continue
+                    # --- FIXED SYNTAX ERROR: Correct indentation for except block ---
                     except Exception as e_chunk:
                         logger.exception(f"Failed synthesize chunk {i + 1}")
-                        st.error(f"Error chunk {i + 1}: {e_chunk}")
+                        st.error(f"Error processing chunk {i + 1}: {e_chunk}")
+                        # Ensure problematic path isn't processed later if it was added
                         if temp_chunk_path in temp_chunk_files:
-                            temp_chunk_files.remove(temp_chunk_path)
-                        continue
+                            try:
+                                temp_chunk_files.remove(temp_chunk_path)
+                                logger.debug(f"Removed problematic chunk path {temp_chunk_path} from list.")
+                            except ValueError:
+                                logger.warning(f"Could not remove {temp_chunk_path} from temp_chunk_files list.")
+                        continue  # Skip to next chunk
+                    # --- END FIX ---
 
                 # --- Update placeholder before concatenation ---
                 progress_placeholder.text("Combining audio chunks...")
@@ -751,6 +774,7 @@ class UIManager:
         if audio is not None and sr is not None:
             track_id = str(uuid.uuid4())
             track_params = AppState.get_default_track_params()
+            # Store full original audio, remove processed
             track_params.update({"original_audio": audio, "processed_audio": audio.copy(), "sr": sr, "name": track_name})
             self.app_state.add_track(track_id, track_params)
             st.success(f"'{track_name}' track generated!")

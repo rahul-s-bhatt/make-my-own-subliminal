@@ -160,5 +160,4 @@ cython_debug/
 #.idea/
 output/*
 *.log.*
-utils/final_output.mp3
-utils/long_text.txt
+utils/*

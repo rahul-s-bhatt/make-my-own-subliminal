@@ -1,6 +1,6 @@
 # ==========================================
 # MindMorph - Pro Subliminal Audio Editor
-# Version: 3.8 (OOP - Optimized Preview Mix Speed)
+# Version: 4.3 (OOP - Fixed Filename Session State Error)
 # ==========================================
 # --- Early Config ---
 import os
@@ -19,7 +19,9 @@ st.set_page_config(layout="wide", page_title="MindMorph - Pro Subliminal Editor"
 # --- Imports ---
 import logging
 import logging.handlers
+import math  # For fading
 import queue
+import re  # For sanitizing filename
 import tempfile
 import textwrap
 import time
@@ -62,6 +64,16 @@ try:
     from streamlit.runtime.uploaded_file_manager import UploadedFile
     from streamlit_advanced_audio import WaveSurferOptions, audix
 
+    # Try importing pydub for MP3 export check
+    try:
+        from pydub import AudioSegment
+
+        PYDUB_AVAILABLE = True
+        logger.info("pydub library found. MP3 export might be available (if ffmpeg is also installed).")
+    except ImportError:
+        PYDUB_AVAILABLE = False
+        logger.warning("pydub library not found. MP3 export will be disabled.")
+
     logger.debug("Core audio, UI, and docx libraries imported successfully.")
 except ImportError as e:
     logger.exception("CRITICAL: Failed to import core libraries. App cannot continue.")
@@ -69,6 +81,8 @@ except ImportError as e:
     install_cmd = f"pip install {missing_lib}"
     if missing_lib == "docx":
         install_cmd = "pip install python-docx"
+    elif missing_lib == "pydub":
+        install_cmd = "pip install pydub"
     st.error(f"Core library import failed: {e}. Ensure dependencies installed.")
     st.error(f"Missing: {missing_lib}")
     st.error(f"Try: `{install_cmd}`")
@@ -90,12 +104,21 @@ AudioData = np.ndarray
 SampleRate = int
 TrackID = str
 TrackData = Dict[str, Any]
+TrackType = str  # e.g., 'affirmation', 'background', 'frequency', 'voice', 'other'
+
+# --- Constants for Track Types ---
+TRACK_TYPE_AFFIRMATION = "🗣️ Affirmation"
+TRACK_TYPE_BACKGROUND = "🎵 Background/Mask"
+TRACK_TYPE_FREQUENCY = "🧠 Frequency"
+TRACK_TYPE_VOICE = "🎤 Voice Recording"
+TRACK_TYPE_OTHER = "⚪ Other"
+TRACK_TYPES = [TRACK_TYPE_AFFIRMATION, TRACK_TYPE_BACKGROUND, TRACK_TYPE_FREQUENCY, TRACK_TYPE_VOICE, TRACK_TYPE_OTHER]
 
 
 # ==========================================
 # 1. Audio Processing Utilities (Functions)
 # ==========================================
-# (Functions load_audio, save_audio, save_audio_to_temp, generate*, apply_speed*, apply_pitch*, apply_filter* remain unchanged)
+# (Functions load_audio, save_audio, save_audio_to_temp, generate*, apply*, mix_tracks remain unchanged from v4.0)
 # ... (Keep all audio utility functions from the previous version here) ...
 def load_audio(file_source: UploadedFile | BytesIO | str, target_sr: SampleRate = GLOBAL_SR) -> tuple[AudioData, SampleRate]:
     """Loads, ensures stereo, and resamples audio."""
@@ -182,6 +205,28 @@ def generate_solfeggio_frequency(duration: float, freq: float, sr: SampleRate, v
     return np.clip(audio, -1.0, 1.0)
 
 
+def generate_white_noise(duration: float, sr: SampleRate, volume: float) -> AudioData:
+    """Generates stereo white noise."""
+    logger.info(f"Generating white noise: dur={duration}s, vol={volume}")
+    num_samples = int(sr * duration)
+    noise = np.random.uniform(-1.0, 1.0, size=(num_samples, 2))
+    audio = np.clip(noise * volume, -1.0, 1.0)
+    return audio.astype(np.float32)
+
+
+def apply_reverse(audio: AudioData) -> AudioData:
+    """Reverses the audio data along the time axis."""
+    logger.debug("Applying reverse effect.")
+    if audio is None or audio.size == 0:
+        return audio
+    try:
+        return audio[::-1].astype(np.float32)
+    except Exception as e:
+        logger.exception("Error applying reverse effect.")
+        st.error(f"Reverse effect failed: {e}")
+        return audio
+
+
 def apply_speed_change(audio: AudioData, sr: SampleRate, speed_factor: float) -> AudioData:
     logger.debug(f"Applying speed change factor: {speed_factor} (time_stretch)")
     if np.any(np.isnan(audio)) or np.any(np.isinf(audio)):
@@ -197,7 +242,6 @@ def apply_speed_change(audio: AudioData, sr: SampleRate, speed_factor: float) ->
             if audio.size == 0:
                 return audio
             logging.info(f"Applying time stretch (factor: {speed_factor})...")
-            # Ensure input is C-contiguous which librosa often expects
             audio_contiguous = np.ascontiguousarray(audio.T)
             audio_stretched = librosa.effects.time_stretch(audio_contiguous, rate=speed_factor)
             return audio_stretched.T.astype(np.float32)
@@ -215,7 +259,6 @@ def apply_pitch_shift(audio: AudioData, sr: SampleRate, n_steps: float) -> Audio
             if audio.size == 0:
                 return audio
             logging.info(f"Applying pitch shift ({n_steps} semitones)...")
-            # Ensure input is C-contiguous
             audio_contiguous = np.ascontiguousarray(audio.T)
             audio_shifted = librosa.effects.pitch_shift(audio_contiguous, sr=sr, n_steps=n_steps)
             return audio_shifted.T.astype(np.float32)
@@ -270,13 +313,14 @@ def apply_filter(audio: AudioData, sr: SampleRate, filter_type: str, cutoff: flo
 
 
 def apply_all_effects(track_data: TrackData, audio_segment: Optional[AudioData] = None) -> AudioData:
-    """Applies speed, pitch, and filter effects sequentially."""
+    """Applies effects sequentially: Reverse (optional) -> Speed -> Pitch -> Filter."""
     track_name = track_data.get("name", "Unnamed")
+    should_reverse = track_data.get("reverse_audio", False)
     if audio_segment is not None:
         audio = audio_segment.copy()
-        logger.debug(f"Applying effects to segment for: '{track_name}'")
+        logger.debug(f"Applying effects to segment for: '{track_name}' (Reverse={should_reverse})")
     else:
-        logger.info(f"Applying effects to full original_audio for: '{track_name}'")
+        logger.info(f"Applying effects to full original_audio for: '{track_name}' (Reverse={should_reverse})")
         audio = track_data.get("original_audio")
     if audio is None:
         logging.error(f"'{track_name}' missing 'original_audio'.")
@@ -286,6 +330,8 @@ def apply_all_effects(track_data: TrackData, audio_segment: Optional[AudioData] 
     if audio.size == 0:
         logging.warning(f"Input audio for effects is empty for '{track_name}'.")
         return audio
+    if should_reverse:
+        audio = apply_reverse(audio)
     audio = apply_speed_change(audio, sr, track_data.get("speed_factor", 1.0))
     audio = apply_pitch_shift(audio, sr, track_data.get("pitch_shift", 0))
     audio = apply_filter(audio, sr, track_data.get("filter_type", "off"), track_data.get("filter_cutoff", 8000.0))
@@ -293,98 +339,72 @@ def apply_all_effects(track_data: TrackData, audio_segment: Optional[AudioData] 
     return audio
 
 
-# --- UPDATED: get_preview_audio now applies volume/pan ---
 def get_preview_audio(track_data: TrackData, preview_duration_s: int = PREVIEW_DURATION_S) -> Optional[AudioData]:
     """Generates a preview (first N seconds) of the track with effects AND volume/pan applied."""
     track_name = track_data.get("name", "N/A")
     logger.info(f"Generating preview audio for track '{track_name}'")
     original_audio = track_data.get("original_audio")
     sr = track_data.get("sr", GLOBAL_SR)
-
     if original_audio is None or original_audio.size == 0:
-        logger.warning(f"No original audio found for track '{track_name}' to generate preview.")
+        logger.warning(f"No original audio for '{track_name}'.")
         return None
-
     try:
         preview_samples = min(len(original_audio), int(sr * preview_duration_s))
         if preview_samples <= 0:
-            logger.warning(f"Calculated preview samples <= 0 for track '{track_name}'.")
+            logger.warning(f"Preview samples <= 0 for '{track_name}'.")
             return None
-
         preview_segment = original_audio[:preview_samples].copy()
-        logger.debug(f"Applying effects to preview segment (len={preview_samples}) for track '{track_name}'")
-
-        # Apply base effects (speed, pitch, filter)
+        logger.debug(f"Applying effects to preview segment (len={preview_samples}) for '{track_name}'")
         processed_preview = apply_all_effects(track_data, audio_segment=preview_segment)
-
-        # --- Apply Volume and Pan to the preview segment ---
         vol = track_data.get("volume", 1.0)
         pan = track_data.get("pan", 0.0)
         logger.debug(f"Applying Vol ({vol:.2f}) / Pan ({pan:.2f}) to preview for '{track_name}'")
         pan_rad = (pan + 1) * np.pi / 4
         left_gain = vol * np.cos(pan_rad)
         right_gain = vol * np.sin(pan_rad)
-
         if processed_preview.ndim == 2 and processed_preview.shape[1] == 2:
             processed_preview[:, 0] *= left_gain
             processed_preview[:, 1] *= right_gain
         else:
-            logger.warning(f"Preview audio for '{track_name}' is not stereo ({processed_preview.shape}). Cannot apply pan/vol correctly in preview.")
-            if processed_preview.ndim == 1 or processed_preview.shape[1] == 1:
-                processed_preview *= vol  # Apply overall volume
-
+            logger.warning(f"Preview for '{track_name}' not stereo ({processed_preview.shape}). Cannot apply pan/vol.")
         processed_preview = np.clip(processed_preview, -1.0, 1.0)
-        # ----------------------------------------------------
-
-        logger.debug(f"Preview generation complete for track '{track_name}'. Preview shape: {processed_preview.shape}")
+        logger.debug(f"Preview generation complete for '{track_name}'. Shape: {processed_preview.shape}")
         return processed_preview
-
     except Exception as e:
-        logger.exception(f"Error generating preview audio for track '{track_name}'")
-        st.error(f"Error generating preview for '{track_name}': {e}")
+        logger.exception(f"Error generating preview for '{track_name}'")
+        st.error(f"Error previewing '{track_name}': {e}")
         return None
 
 
-# --- END UPDATED FUNCTION ---
-
-
-# --- UPDATED mix_tracks for non-destructive workflow & OPTIMIZED PREVIEW ---
-def mix_tracks(tracks_dict: Dict[TrackID, TrackData], preview: bool = False) -> AudioData:
-    """
-    Mixes tracks. Applies full effects on-the-fly from original_audio + params.
-    Handles looping during mixing.
-    If preview=True, processes only the initial segment of each track for speed.
-    """
-    logger.info(f"Starting track mixing (non-destructive). Preview: {preview}")
+def mix_tracks(tracks_dict: Dict[TrackID, TrackData], preview: bool = False, fade_in_s: float = 0.0, fade_out_s: float = 0.0) -> Tuple[Optional[AudioData], Optional[int]]:
+    """Mixes tracks. Applies full effects on-the-fly. Handles looping & fades."""
+    logger.info(f"Starting track mixing (non-destructive). Preview: {preview}, FadeIn: {fade_in_s}s, FadeOut: {fade_out_s}s")
     if not tracks_dict:
         logging.warning("Mix called but no tracks.")
-        return np.zeros((0, 2), dtype=np.float32)
+        return None, None
 
     processed_segments = {}  # Store processed audio (full or segment)
     max_len = 0
     valid_track_ids_for_mix = []
-
     solo_active = any(t.get("solo", False) for t in tracks_dict.values())
     logger.debug(f"Solo active: {solo_active}")
 
     # --- Determine target length and process segments ---
-    target_mix_len = 0  # Will be calculated or set for preview
+    target_mix_len_samples = 0  # Will be calculated or set for preview
 
     if preview:
-        target_mix_len = int(GLOBAL_SR * MIX_PREVIEW_DURATION_S)
-        # Calculate needed processing duration (add buffer for slow-down effects)
+        target_mix_len_samples = int(GLOBAL_SR * MIX_PREVIEW_DURATION_S)
         process_duration_s = MIX_PREVIEW_DURATION_S + MIX_PREVIEW_PROCESSING_BUFFER_S
-        logger.info(f"Preview mode: Target mix length {target_mix_len} samples ({MIX_PREVIEW_DURATION_S}s). Processing ~{process_duration_s}s per track.")
+        logger.info(f"Preview mode: Target mix length {target_mix_len_samples} samples ({MIX_PREVIEW_DURATION_S}s). Processing ~{process_duration_s}s per track.")
     else:
         logger.info("Full mix mode: Calculating full lengths.")
-        # Need to process full tracks first to find the true max_len for looping/padding
         temp_full_lengths = {}
         for track_id, t_data in tracks_dict.items():
             is_active = t_data.get("solo", False) if solo_active else not t_data.get("mute", False)
             original_audio = t_data.get("original_audio")
             if is_active and original_audio is not None and original_audio.size > 0:
                 logger.debug(f"Processing FULL track '{t_data.get('name', track_id)}' for length.")
-                full_processed = apply_all_effects(t_data)
+                full_processed = apply_all_effects(t_data)  # Includes potential reversal
                 temp_full_lengths[track_id] = len(full_processed)
                 processed_segments[track_id] = full_processed  # Store for later use
                 valid_track_ids_for_mix.append(track_id)
@@ -392,73 +412,65 @@ def mix_tracks(tracks_dict: Dict[TrackID, TrackData], preview: bool = False) -> 
                 logger.debug(f"Skipping track '{t_data.get('name', track_id)}' (muted/soloed/no audio).")
         if not valid_track_ids_for_mix:
             logging.warning("No valid tracks for full mix.")
-            return np.zeros((0, 2), dtype=np.float32)
-        target_mix_len = max(temp_full_lengths.values()) if temp_full_lengths else 0
-        logger.info(f"Full mix mode: Target length is {target_mix_len} samples ({target_mix_len / GLOBAL_SR:.2f}s)")
+            return None, None
+        target_mix_len_samples = max(temp_full_lengths.values()) if temp_full_lengths else 0
+        logger.info(f"Full mix mode: Target length is {target_mix_len_samples} samples ({target_mix_len_samples / GLOBAL_SR:.2f}s)")
 
-    if target_mix_len <= 0:
+    if target_mix_len_samples <= 0:
         logging.warning("Mix length <= 0.")
-        return np.zeros((0, 2), dtype=np.float32)
+        return None, None
 
     # --- Process required segments (only needed if preview, otherwise already done) ---
     if preview:
         for track_id, t_data in tracks_dict.items():
             is_active = t_data.get("solo", False) if solo_active else not t_data.get("mute", False)
             original_audio = t_data.get("original_audio")
-            if is_active and original_audio is not None and original_audio.size > 0:
+            # Only process if it wasn't already processed in the full mix check (which shouldn't happen in preview mode)
+            if track_id not in processed_segments and is_active and original_audio is not None and original_audio.size > 0:
                 logger.debug(f"Processing PREVIEW segment for track '{t_data.get('name', track_id)}'.")
                 process_samples = min(len(original_audio), int(GLOBAL_SR * process_duration_s))
                 segment = original_audio[:process_samples].copy()
-                processed_segment = apply_all_effects(t_data, audio_segment=segment)
+                processed_segment = apply_all_effects(t_data, audio_segment=segment)  # Includes potential reversal
                 processed_segments[track_id] = processed_segment
-                valid_track_ids_for_mix.append(track_id)  # Add valid tracks for preview
-            # No need for else, already skipped inactive tracks in full mode check
-
+                valid_track_ids_for_mix.append(track_id)  # Ensure it's in the list
+        # Remove duplicates just in case
+        valid_track_ids_for_mix = list(set(valid_track_ids_for_mix))
         if not valid_track_ids_for_mix:
             logging.warning("No valid tracks found for preview mix.")
-            return np.zeros((0, 2), dtype=np.float32)
+            return None, None
 
     # --- Create mix buffer and combine tracks ---
-    mix = np.zeros((target_mix_len, 2), dtype=np.float32)
-    logger.info(f"Mixing {len(valid_track_ids_for_mix)} tracks. Target length: {target_mix_len / GLOBAL_SR:.2f}s")
-
+    mix = np.zeros((target_mix_len_samples, 2), dtype=np.float32)
+    logger.info(f"Mixing {len(valid_track_ids_for_mix)} tracks. Target length: {target_mix_len_samples / GLOBAL_SR:.2f}s")
     for track_id in valid_track_ids_for_mix:
         t_data = tracks_dict[track_id]
         track_name = t_data.get("name", track_id)
-        audio_segment = processed_segments.get(track_id)  # Get the processed segment (full or partial)
-
+        audio_segment = processed_segments.get(track_id)
         if audio_segment is None or audio_segment.size == 0:
-            logger.warning(f"Processed audio missing or empty for track '{track_name}' during mixing loop. Skipping.")
+            logger.warning(f"Processed audio missing for '{track_name}'. Skipping.")
             continue
-
         final_audio_for_track = audio_segment
-
-        # --- Apply Looping (only for FULL mix, not preview) ---
         should_loop = t_data.get("loop_to_fit", False)
         if not preview and should_loop:  # Only loop in full mix mode
-            current_len = len(audio_segment)  # Length after effects
-            if target_mix_len > 0 and current_len > 0 and current_len < target_mix_len:
-                logger.info(f"Looping track '{track_name}' from {current_len} to {target_mix_len} samples for mix.")
-                n_repeats = target_mix_len // current_len
-                remainder = target_mix_len % current_len
+            current_len = len(audio_segment)
+            if target_mix_len_samples > 0 and current_len > 0 and current_len < target_mix_len_samples:
+                logger.info(f"Looping track '{track_name}' from {current_len} to {target_mix_len_samples} samples for mix.")
+                n_repeats = target_mix_len_samples // current_len
+                remainder = target_mix_len_samples % current_len
                 looped_list = [audio_segment] * n_repeats
                 if remainder > 0:
                     looped_list.append(audio_segment[:remainder])
                 final_audio_for_track = np.concatenate(looped_list, axis=0)
                 logger.debug(f"Looping complete for '{track_name}'. New length: {len(final_audio_for_track)}")
             else:
-                logger.debug(f"Looping not needed for '{track_name}' (curr: {current_len}, max: {target_mix_len})")
-
-        # --- Pad or Truncate to final mix length ---
+                logger.debug(f"Looping not needed for '{track_name}' (curr: {current_len}, max: {target_mix_len_samples})")
         current_len = len(final_audio_for_track)
-        if current_len < target_mix_len:
-            audio_adjusted = np.pad(final_audio_for_track, ((0, target_mix_len - current_len), (0, 0)), mode="constant")
-        elif current_len > target_mix_len:
-            audio_adjusted = final_audio_for_track[:target_mix_len, :]
+        if current_len < target_mix_len_samples:
+            audio_adjusted = np.pad(final_audio_for_track, ((0, target_mix_len_samples - current_len), (0, 0)), mode="constant")
+        elif current_len > target_mix_len_samples:
+            audio_adjusted = final_audio_for_track[:target_mix_len_samples, :]
         else:
             audio_adjusted = final_audio_for_track.copy()
-
-        # --- Apply Volume and Pan ---
         pan = t_data.get("pan", 0.0)
         vol = t_data.get("volume", 1.0)
         logger.debug(f"Track '{track_name}': vol={vol:.2f}, pan={pan:.2f}")
@@ -468,14 +480,33 @@ def mix_tracks(tracks_dict: Dict[TrackID, TrackData], preview: bool = False) -> 
         panned_audio = np.zeros_like(audio_adjusted)
         panned_audio[:, 0] = audio_adjusted[:, 0] * left_gain
         panned_audio[:, 1] = audio_adjusted[:, 1] * right_gain
-
-        # --- Add to mix ---
         mix += panned_audio
         logger.debug(f"Added track '{track_name}' to mix.")
 
     final_mix = np.clip(mix, -1.0, 1.0)
+
+    # --- Apply Master Fades (only on full export, not preview) ---
+    if not preview and (fade_in_s > 0 or fade_out_s > 0):
+        logger.info(f"Applying master fades: In={fade_in_s}s, Out={fade_out_s}s")
+        fade_in_samples = int(fade_in_s * GLOBAL_SR)
+        fade_out_samples = int(fade_out_s * GLOBAL_SR)
+        total_samples = len(final_mix)
+        if fade_in_samples > 0:
+            fade_in_samples = min(fade_in_samples, total_samples)
+            fade_in_curve = np.linspace(0.0, 1.0, fade_in_samples)
+            final_mix[:fade_in_samples, 0] *= fade_in_curve
+            final_mix[:fade_in_samples, 1] *= fade_in_curve
+            logger.debug(f"Applied fade-in over {fade_in_samples} samples.")
+        if fade_out_samples > 0:
+            fade_out_samples = min(fade_out_samples, total_samples)
+            fade_out_curve = np.linspace(1.0, 0.0, fade_out_samples)
+            final_mix[total_samples - fade_out_samples :, 0] *= fade_out_curve
+            final_mix[total_samples - fade_out_samples :, 1] *= fade_out_curve
+            logger.debug(f"Applied fade-out over {fade_out_samples} samples.")
+    # -------------------------------------------------------------
+
     logger.info("Mixing complete.")
-    return final_mix.astype(np.float32)
+    return final_mix.astype(np.float32), target_mix_len_samples  # Return audio and length
 
 
 # --- Helper to read text files ---
@@ -527,13 +558,13 @@ def read_text_file(uploaded_file: UploadedFile) -> Optional[str]:
 
 
 # ==========================================
-# 2. Application State Management - NON-DESTRUCTIVE + PREVIEW PATH
+# 2. Application State Management - NON-DESTRUCTIVE + PREVIEW PATH + TYPE
 # ==========================================
-# (AppState class remains the same as v3.5)
+# (AppState class remains the same as v4.0)
 class AppState:
-    """Manages the application state using non-destructive approach + preview path."""
+    """Manages the application state using non-destructive approach + preview path + track type."""
 
-    STATE_KEY = "tracks_non_destructive_v2"  # Use a new key
+    STATE_KEY = "tracks_non_destructive_v3"
 
     def __init__(self):
         if self.STATE_KEY not in st.session_state:
@@ -551,6 +582,14 @@ class AppState:
                 logger.warning(f"Track {track_id} missing 'preview_temp_file_path', adding default.")
                 st.session_state[self.STATE_KEY][track_id]["preview_temp_file_path"] = None
                 changed = True
+            if "reverse_audio" not in track_data:
+                logger.warning(f"Track {track_id} missing 'reverse_audio', adding default.")
+                st.session_state[self.STATE_KEY][track_id]["reverse_audio"] = False
+                changed = True
+            if "track_type" not in track_data:
+                logger.warning(f"Track {track_id} missing 'track_type', adding default.")
+                st.session_state[self.STATE_KEY][track_id]["track_type"] = TRACK_TYPE_OTHER
+                changed = True
             for key, default_value in AppState.get_default_track_params().items():
                 if key not in track_data:
                     logger.warning(f"Track {track_id} missing key '{key}', adding default.")
@@ -559,11 +598,12 @@ class AppState:
 
     @staticmethod
     def get_default_track_params() -> TrackData:
-        """Returns default parameters (NO processed_audio, ADDED preview path)."""
+        """Returns default parameters including track_type."""
         return {
-            "original_audio": np.zeros((0, 2), dtype=np.float32),  # Store full original
+            "original_audio": np.zeros((0, 2), dtype=np.float32),
             "sr": GLOBAL_SR,
             "name": "New Track",
+            "track_type": TRACK_TYPE_OTHER,
             "volume": 1.0,
             "mute": False,
             "solo": False,
@@ -573,7 +613,8 @@ class AppState:
             "filter_type": "off",
             "filter_cutoff": 8000.0,
             "loop_to_fit": False,
-            "preview_temp_file_path": None,  # <-- Path to the current preview file
+            "reverse_audio": False,
+            "preview_temp_file_path": None,
             "update_counter": 0,
         }
 
@@ -586,8 +627,8 @@ class AppState:
     def get_track(self, track_id: TrackID) -> Optional[TrackData]:
         return self._get_tracks_dict().get(track_id)
 
-    def add_track(self, track_id: TrackID, track_data: TrackData):
-        """Adds a new track, storing only original audio and parameters."""
+    def add_track(self, track_id: TrackID, track_data: TrackData, track_type: TrackType = TRACK_TYPE_OTHER):
+        """Adds a new track, storing original audio, parameters, and type."""
         if not isinstance(track_data, dict):
             logger.error(f"Invalid track data type {track_id}")
             return
@@ -599,9 +640,10 @@ class AppState:
         final_track_data["original_audio"] = track_data["original_audio"]
         final_track_data["sr"] = track_data.get("sr", GLOBAL_SR)
         final_track_data["name"] = track_data.get("name", default_params["name"])
+        final_track_data["track_type"] = track_type  # Set the type
         final_track_data["preview_temp_file_path"] = None
         st.session_state[self.STATE_KEY][track_id] = final_track_data
-        logger.info(f"Added track ID: {track_id}, Name: '{final_track_data.get('name', 'N/A')}'")
+        logger.info(f"Added track ID: {track_id}, Name: '{final_track_data.get('name', 'N/A')}', Type: {track_type}")
 
     def delete_track(self, track_id: TrackID):
         """Deletes a track and its associated preview temp file."""
@@ -792,7 +834,7 @@ class TTSGenerator:
 
 
 # ==========================================
-# 4. UI Management (Class) - BUTTON-DRIVEN PREVIEW
+# 4. UI Management (Class) - COMMUNITY FEATURES
 # ==========================================
 class UIManager:
     """Handles rendering Streamlit UI components using button-driven previews."""
@@ -802,7 +844,7 @@ class UIManager:
         self.tts_generator = tts_generator
         logger.debug("UIManager initialized.")
 
-    # (render_sidebar and its helpers _render_uploader, _render_affirmation_inputs, _render_binaural_generator, _render_solfeggio_generator remain the same as v2.11)
+    # (render_sidebar and its helpers _render_uploader, _render_affirmation_inputs, _render_binaural_generator, _render_solfeggio_generator remain the same as v4.0)
     # ...
     def render_sidebar(self):
         with st.sidebar:
@@ -819,20 +861,22 @@ class UIManager:
             st.divider()
             self._render_affirmation_inputs()
             st.divider()  # Uses new method
-            self._render_binaural_generator()
-            st.divider()
-            self._render_solfeggio_generator()
-            st.markdown("---")
+            self._render_frequency_generators()
+            st.divider()  # Combined Freq Gens
+            self._render_background_generators()
+            st.markdown("---")  # Background Noise
             st.info("Edit track details in the main panel.")
 
     def _render_uploader(self):
         st.subheader("📁 Upload Audio File(s)")
+        st.caption("Upload music, voice recordings, or other sounds.")
         uploaded_files = st.file_uploader(
-            "Upload background music or recordings",
+            "Select audio files",
             type=["wav", "mp3", "ogg", "flac"],
             accept_multiple_files=True,
             key="upload_files_key",
-            help="Select audio files for separate tracks.",
+            label_visibility="collapsed",
+            help="Select one or more audio files.",
         )
         loaded_track_names = self.app_state.get_loaded_track_names()
         if uploaded_files:
@@ -844,9 +888,10 @@ class UIManager:
                     if audio.size > 0:
                         track_id = str(uuid.uuid4())
                         track_params = AppState.get_default_track_params()
-                        # Store full original audio
+                        # Deduce likely type based on name? Simple heuristic for now.
+                        track_type = TRACK_TYPE_VOICE if "voice" in file.name.lower() or "record" in file.name.lower() else TRACK_TYPE_BACKGROUND
                         track_params.update({"original_audio": audio, "sr": sr, "name": file.name})
-                        self.app_state.add_track(track_id, track_params)
+                        self.app_state.add_track(track_id, track_params, track_type=track_type)
                         st.success(f"Loaded '{file.name}'")
                         loaded_track_names.append(file.name)
                     else:
@@ -856,6 +901,7 @@ class UIManager:
     def _render_affirmation_inputs(self):
         """Renders options for adding affirmations (TTS, File Upload, Record Placeholder)."""
         st.subheader("🗣️ Add Affirmations")
+        st.caption("Uses system default TTS voice. Voice selection depends on OS/browser.")
         tab1, tab2, tab3 = st.tabs(["Type Text", "Upload File", "Record Audio"])
         with tab1:
             st.caption("Type or paste affirmations below.")
@@ -863,11 +909,7 @@ class UIManager:
                 "Affirmations (one per line)", height=150, key="affirmation_text_area", label_visibility="collapsed", help="Enter each affirmation on a new line."
             )
             if st.button(
-                "Generate Track from Text",
-                key="generate_tts_text_key",
-                use_container_width=True,
-                type="primary",
-                help="Convert the text above to a spoken audio track using Text-to-Speech.",
+                "Generate Affirmation Track", key="generate_tts_text_key", use_container_width=True, type="primary", help="Convert the text above to a spoken audio track."
             ):
                 if affirmation_text:
                     self._generate_tts_track(affirmation_text, "Affirmations (Text)")
@@ -905,51 +947,110 @@ class UIManager:
             st.button("Start Recording", key="start_record_key", disabled=True, use_container_width=True)
 
     def _generate_tts_track(self, text_content: str, track_name: str):
-        """Helper to generate TTS (now uses chunking generator) and add track."""
+        """Helper to generate TTS and add track, tagged as Affirmation."""
         audio, sr = self.tts_generator.generate(text_content)  # Spinner inside generate
         if audio is not None and sr is not None:
             track_id = str(uuid.uuid4())
             track_params = AppState.get_default_track_params()
-            # Store full original audio
             track_params.update({"original_audio": audio, "sr": sr, "name": track_name})
-            self.app_state.add_track(track_id, track_params)
+            self.app_state.add_track(track_id, track_params, track_type=TRACK_TYPE_AFFIRMATION)  # Tag as affirmation
             st.success(f"'{track_name}' track generated!")
             st.toast("Affirmation track added!", icon="✅")
 
-    def _render_binaural_generator(self):
-        st.subheader("🧠 Generate Binaural Beats")
-        st.markdown("<small>Generates stereo tones potentially inducing brainwave states (requires headphones).</small>", unsafe_allow_html=True)
-        bb_cols = st.columns(2)
-        bb_duration = bb_cols[0].number_input("Duration (s)", 1, 3600, 60, 1, key="bb_duration", help="Length in seconds.")
-        bb_vol = bb_cols[1].slider("Volume##BB", 0.0, 1.0, 0.3, 0.05, key="bb_volume", help="Loudness (0.0 to 1.0). Usually kept low.")
-        bb_fcols = st.columns(2)
-        bb_fleft = bb_fcols[0].number_input("Left Freq (Hz)", 20, 1000, 200, 1, key="bb_freq_left", help="Left ear frequency.")
-        bb_fright = bb_fcols[1].number_input("Right Freq (Hz)", 20, 1000, 210, 1, key="bb_freq_right", help="Right ear frequency.")
-        if st.button("Generate Binaural Track", key="generate_bb", help="Create track with these settings."):
-            with st.spinner("Generating..."):
-                audio = generate_binaural_beats(bb_duration, bb_fleft, bb_fright, GLOBAL_SR, bb_vol)
-            track_id = str(uuid.uuid4())
-            track_params = AppState.get_default_track_params()
-            track_params.update({"original_audio": audio, "sr": GLOBAL_SR, "name": f"Binaural {bb_fleft}/{bb_fright}Hz"})
-            self.app_state.add_track(track_id, track_params)
-            st.success("Binaural Beats generated!")
+    def _render_frequency_generators(self):
+        """Renders options for generating Binaural Beats and Solfeggio Tones."""
+        st.subheader("🧠✨ Add Frequencies / Tones")
+        gen_type = st.radio("Select Type:", ["Binaural Beats", "Solfeggio Tones", "Presets"], key="freq_gen_type", horizontal=True, label_visibility="collapsed")
 
-    def _render_solfeggio_generator(self):
-        st.subheader("✨ Generate Solfeggio Tone")
-        st.markdown("<small>Generates pure tones based on historical Solfeggio frequencies.</small>", unsafe_allow_html=True)
-        freqs = [174, 285, 396, 417, 528, 639, 741, 852, 963]
-        cols = st.columns(2)
-        freq = cols[0].selectbox("Frequency (Hz)", freqs, index=4, key="solf_freq", help="Select Solfeggio frequency.")
-        duration = cols[1].number_input("Duration (s)##Solf", 1, 3600, 60, 1, key="solf_duration", help="Length in seconds.")
-        vol = st.slider("Volume##Solf", 0.0, 1.0, 0.3, 0.05, key="solf_volume", help="Loudness (0.0 to 1.0). Usually kept low.")
-        if st.button("Generate Solfeggio Track", key="generate_solf", help="Create track with this tone."):
-            with st.spinner("Generating..."):
-                audio = generate_solfeggio_frequency(duration, freq, GLOBAL_SR, vol)
-            track_id = str(uuid.uuid4())
-            track_params = AppState.get_default_track_params()
-            track_params.update({"original_audio": audio, "sr": GLOBAL_SR, "name": f"Solfeggio {freq}Hz"})
-            self.app_state.add_track(track_id, track_params)
-            st.success(f"Solfeggio {freq}Hz generated!")
+        if gen_type == "Binaural Beats":
+            st.markdown("<small>Generates stereo tones potentially inducing brainwave states (requires headphones).</small>", unsafe_allow_html=True)
+            bb_cols = st.columns(2)
+            bb_duration = bb_cols[0].number_input("Duration (s)", 1, 3600, 60, 1, key="bb_duration", help="Length in seconds.")
+            bb_vol = bb_cols[1].slider("Volume##BB", 0.0, 1.0, 0.3, 0.05, key="bb_volume", help="Loudness (0.0 to 1.0). Usually kept low.")
+            bb_fcols = st.columns(2)
+            bb_fleft = bb_fcols[0].number_input("Left Freq (Hz)", 20, 1000, 200, 1, key="bb_freq_left", help="Left ear frequency.")
+            bb_fright = bb_fcols[1].number_input("Right Freq (Hz)", 20, 1000, 210, 1, key="bb_freq_right", help="Right ear frequency.")
+            if st.button("Generate Binaural Track", key="generate_bb", help="Create track with these settings."):
+                with st.spinner("Generating..."):
+                    audio = generate_binaural_beats(bb_duration, bb_fleft, bb_fright, GLOBAL_SR, bb_vol)
+                track_id = str(uuid.uuid4())
+                track_params = AppState.get_default_track_params()
+                track_params.update({"original_audio": audio, "sr": GLOBAL_SR, "name": f"Binaural {bb_fleft}/{bb_fright}Hz"})
+                self.app_state.add_track(track_id, track_params, track_type=TRACK_TYPE_FREQUENCY)
+                st.success("Binaural Beats generated!")
+
+        elif gen_type == "Solfeggio Tones":
+            st.markdown("<small>Generates pure tones based on historical Solfeggio frequencies.</small>", unsafe_allow_html=True)
+            freqs = [174, 285, 396, 417, 528, 639, 741, 852, 963]
+            cols = st.columns(2)
+            freq = cols[0].selectbox("Frequency (Hz)", freqs, index=4, key="solf_freq", help="Select Solfeggio frequency.")
+            duration = cols[1].number_input("Duration (s)##Solf", 1, 3600, 60, 1, key="solf_duration", help="Length in seconds.")
+            vol = st.slider("Volume##Solf", 0.0, 1.0, 0.3, 0.05, key="solf_volume", help="Loudness (0.0 to 1.0). Usually kept low.")
+            if st.button("Generate Solfeggio Track", key="generate_solf", help="Create track with this tone."):
+                with st.spinner("Generating..."):
+                    audio = generate_solfeggio_frequency(duration, freq, GLOBAL_SR, vol)
+                track_id = str(uuid.uuid4())
+                track_params = AppState.get_default_track_params()
+                track_params.update({"original_audio": audio, "sr": GLOBAL_SR, "name": f"Solfeggio {freq}Hz"})
+                self.app_state.add_track(track_id, track_params, track_type=TRACK_TYPE_FREQUENCY)
+                st.success(f"Solfeggio {freq}Hz generated!")
+
+        elif gen_type == "Presets":
+            st.markdown("<small>Generate common frequency patterns.</small>", unsafe_allow_html=True)
+            preset_options = {
+                "Focus (Alpha 10Hz)": {"type": "binaural", "f_left": 200, "f_right": 210},
+                "Relaxation (Theta 5Hz)": {"type": "binaural", "f_left": 150, "f_right": 155},
+                "Deep Sleep (Delta 2Hz)": {"type": "binaural", "f_left": 100, "f_right": 102},
+                "Love Freq (Solfeggio 528Hz)": {"type": "solfeggio", "freq": 528},
+                "Miracle Tone (Solfeggio 417Hz)": {"type": "solfeggio", "freq": 417},
+            }
+            preset_name = st.selectbox("Select Preset:", list(preset_options.keys()), key="freq_preset_select")
+            preset_data = preset_options[preset_name]
+            cols_preset = st.columns(2)
+            preset_duration = cols_preset[0].number_input("Duration (s)##Preset", 1, 3600, 60, 1, key="preset_duration")
+            preset_vol = cols_preset[1].slider("Volume##Preset", 0.0, 1.0, 0.2, 0.05, key="preset_volume", help="Volume (usually kept low)")
+
+            if st.button(f"Generate '{preset_name}' Track", key="generate_preset_freq"):
+                with st.spinner("Generating preset frequency..."):
+                    audio = None
+                    if preset_data["type"] == "binaural":
+                        audio = generate_binaural_beats(preset_duration, preset_data["f_left"], preset_data["f_right"], GLOBAL_SR, preset_vol)
+                    elif preset_data["type"] == "solfeggio":
+                        audio = generate_solfeggio_frequency(preset_duration, preset_data["freq"], GLOBAL_SR, preset_vol)
+
+                    if audio is not None:
+                        track_id = str(uuid.uuid4())
+                        track_params = AppState.get_default_track_params()
+                        track_params.update({"original_audio": audio, "sr": GLOBAL_SR, "name": preset_name})
+                        self.app_state.add_track(track_id, track_params, track_type=TRACK_TYPE_FREQUENCY)
+                        st.success(f"'{preset_name}' track generated!")
+                    else:
+                        st.error("Failed to generate audio for selected preset.")
+
+    # --- NEW: Background Noise Generator ---
+    def _render_background_generators(self):
+        st.subheader("🎵 Add Background Noise")
+        noise_type = st.selectbox("Select Noise Type:", ["White Noise"], key="noise_type_select")  # Add more later (Brown, Pink)
+        cols_noise = st.columns(2)
+        noise_duration = cols_noise[0].number_input("Duration (s)##Noise", 10, 7200, 300, 10, key="noise_duration", help="Length in seconds (will loop if shorter than project).")
+        noise_vol = cols_noise[1].slider("Volume##Noise", 0.0, 1.0, 0.5, 0.05, key="noise_volume", help="Loudness (0.0 to 1.0).")
+
+        if st.button(f"Generate {noise_type} Track", key="generate_noise"):
+            with st.spinner(f"Generating {noise_type}..."):
+                audio = None
+                if noise_type == "White Noise":
+                    audio = generate_white_noise(noise_duration, GLOBAL_SR, noise_vol)
+                # Add elif for Brown, Pink noise here if implementing
+
+                if audio is not None:
+                    track_id = str(uuid.uuid4())
+                    track_params = AppState.get_default_track_params()
+                    track_params.update({"original_audio": audio, "sr": GLOBAL_SR, "name": noise_type, "loop_to_fit": True})  # Default loop to true for noise
+                    self.app_state.add_track(track_id, track_params, track_type=TRACK_TYPE_BACKGROUND)
+                    st.success(f"{noise_type} track generated!")
+                else:
+                    st.error(f"Failed to generate {noise_type}.")
+        st.caption("More noise types (Brown, Pink, Rain etc.) coming soon!")
 
     def render_tracks_editor(self):
         """Renders the main editor area with all tracks using previews."""
@@ -959,17 +1060,10 @@ class UIManager:
             if "welcome_message_shown" in st.session_state:
                 with st.container(border=True):
                     st.markdown("#### ✨ Your Project is Empty!")
-                    st.markdown("Ready to start creating? Look at the **sidebar on the left** (👈 click the arrow if it's hidden).")
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.markdown("##### 📁 Upload Audio")
-                        st.caption("Add music, sounds...")
-                    with col2:
-                        st.markdown("##### 🗣️ Add Affirmations")
-                        st.caption("From text, file, or recording.")
-                    with col3:
-                        st.markdown("##### 🧠✨ Generate Tones")
-                        st.caption("Add Binaural or Solfeggio.")
+                    st.markdown("Ready to start creating? Use the **sidebar on the left** (👈) to:")
+                    st.markdown("- Add your **🗣️ Affirmations** (Type/Upload/Record)")
+                    st.markdown("- Add a **🎵 Background** sound (Upload/Generate)")
+                    st.markdown("- Optionally add **🧠✨ Tones** (Binaural/Solfeggio/Presets)")
                     st.markdown("---")
                     st.markdown("Once you add a track, the editor controls will appear here.")
             return
@@ -981,10 +1075,11 @@ class UIManager:
             if track_id not in self.app_state.get_all_tracks():
                 continue
             track_name = track_data.get("name", "Unnamed")
-            with st.expander(f"Track: **{track_name}** (`{track_id[:6]}`)", expanded=True):
-                logger.debug(f"Rendering expander for: '{track_name}' ({track_id})")
+            track_type_icon = track_data.get("track_type", TRACK_TYPE_OTHER).split(" ")[0]  # Get icon
+            with st.expander(f"{track_type_icon} Track: **{track_name}** (`{track_id[:6]}`)", expanded=True):
+                logger.debug(f"Rendering expander for: '{track_name}' ({track_id}) Type: {track_data.get('track_type')}")
                 col_main, col_controls = st.columns([3, 1])
-                self._render_track_main_col(track_id, track_data, col_main)  # Will use preview logic
+                self._render_track_main_col(track_id, track_data, col_main)
                 deleted = self._render_track_controls_col(track_id, track_data, col_controls)
                 if deleted:
                     track_ids_to_delete.append(track_id)
@@ -1010,14 +1105,12 @@ class UIManager:
                 # --- Waveform Visualization (Button-Driven) ---
                 st.markdown(f"**Preview Waveform (First {PREVIEW_DURATION_S}s with Effects)**")
                 display_path = track_data.get("preview_temp_file_path")  # Get stored path
-
-                # Check if the file exists at the stored path
                 if display_path and os.path.exists(display_path):
                     ws_options = WaveSurferOptions(
                         height=100, normalize=True, wave_color="#A020F0", progress_color="#800080", cursor_color="#333333", cursor_width=1, bar_width=2, bar_gap=1
                     )
                     update_count = track_data.get("update_counter", 0)
-                    audix_key = f"audix_{track_id}_{update_count}"  # Key changes when button is clicked
+                    audix_key = f"audix_{track_id}_{update_count}"
                     logger.debug(f"Displaying existing preview: '{track_data.get('name', 'N/A')}' key={audix_key} path={display_path}")
                     audix(data=display_path, sample_rate=track_sr, wavesurfer_options=ws_options, key=audix_key)
                 elif original_audio is None or original_audio.size == 0:
@@ -1030,26 +1123,43 @@ class UIManager:
                 st.markdown("**Track Settings**")
                 st.caption("Adjust settings, then click 'Update Preview' below.")
 
-                # --- Combine all adjustable parameters here ---
-                col_loop, col_speed, col_pitch = st.columns([0.5, 1, 1])
-                with col_loop:
+                # --- Add Subliminalize Button for Affirmation Tracks ---
+                if track_data.get("track_type") == TRACK_TYPE_AFFIRMATION:
+                    if st.button(
+                        "⚡ Subliminalize Preset", key=f"subliminalize_{track_id}", help="Quickly set high speed (4x) and low volume (0.05). Click 'Update Preview' after."
+                    ):
+                        logger.info(f"Subliminalize preset applied to track {track_id}")
+                        self.app_state.update_track_param(track_id, "speed_factor", 4.0)
+                        self.app_state.update_track_param(track_id, "volume", 0.05)
+                        st.toast("Subliminal preset applied! Click 'Update Preview'.", icon="⚡")
+                        st.rerun()  # Rerun to reflect slider changes
+                # ------------------------------------------------------
+
+                col_fx1_1, col_fx1_2, col_fx1_3 = st.columns([0.6, 1, 1])  # Loop/Reverse, Speed, Pitch
+                with col_fx1_1:
                     st.markdown("<br/>", unsafe_allow_html=True)
                     loop_value = st.checkbox(
                         "🔁 Loop", key=f"loop_{track_id}", value=track_data.get("loop_to_fit", False), help="Loop track to fit project during final mix/export? (Preview not shown)"
                     )
                     if loop_value != track_data.get("loop_to_fit"):
                         self.app_state.update_track_param(track_id, "loop_to_fit", loop_value)
-                with col_speed:
+                    st.markdown("<br/>", unsafe_allow_html=True)  # Add space
+                    reverse_value = st.checkbox(
+                        "🔄 Reverse", key=f"reverse_{track_id}", value=track_data.get("reverse_audio", False), help="Reverse audio playback? (Updates preview)"
+                    )
+                    if reverse_value != track_data.get("reverse_audio"):
+                        self.app_state.update_track_param(track_id, "reverse_audio", reverse_value)
+                with col_fx1_2:
                     speed = st.slider("Speed", 0.25, 4.0, track_data.get("speed_factor", 1.0), 0.05, key=f"speed_{track_id}", help="Playback speed (>1 faster, <1 slower).")
                     if speed != track_data.get("speed_factor"):
                         self.app_state.update_track_param(track_id, "speed_factor", speed)
-                with col_pitch:
+                with col_fx1_3:
                     pitch = st.slider("Pitch (semitones)", -12, 12, track_data.get("pitch_shift", 0), 1, key=f"pitch_{track_id}", help="Adjust pitch without changing speed.")
                     if pitch != track_data.get("pitch_shift"):
                         self.app_state.update_track_param(track_id, "pitch_shift", pitch)
 
-                col_filter_type, col_filter_cutoff, col_vol, col_pan = st.columns([1, 1, 1, 1])
-                with col_filter_type:
+                col_fx2_1, col_fx2_2, col_fx2_3, col_fx2_4 = st.columns([1, 1, 1, 1])  # Filter, Cutoff, Volume, Pan
+                with col_fx2_1:
                     f_type = st.selectbox(
                         "Filter",
                         ["off", "lowpass", "highpass"],
@@ -1059,7 +1169,7 @@ class UIManager:
                     )
                     if f_type != track_data.get("filter_type"):
                         self.app_state.update_track_param(track_id, "filter_type", f_type)
-                with col_filter_cutoff:
+                with col_fx2_2:
                     f_enabled = track_data["filter_type"] != "off"
                     max_cutoff = track_sr / 2 - 1
                     f_cutoff = st.number_input(
@@ -1074,15 +1184,14 @@ class UIManager:
                     )
                     if f_cutoff != track_data.get("filter_cutoff"):
                         self.app_state.update_track_param(track_id, "filter_cutoff", f_cutoff)
-                with col_vol:
+                with col_fx2_3:
                     vol = st.slider("Volume", 0.0, 2.0, track_data.get("volume", 1.0), 0.05, key=f"vol_{track_id}", help="Adjust loudness (affects preview after Update).")
                     if vol != track_data.get("volume"):
                         self.app_state.update_track_param(track_id, "volume", vol)
-                with col_pan:
+                with col_fx2_4:
                     pan = st.slider("Pan", -1.0, 1.0, track_data.get("pan", 0.0), 0.1, key=f"pan_{track_id}", help="Adjust L/R balance (affects preview after Update).")
                     if pan != track_data.get("pan"):
                         self.app_state.update_track_param(track_id, "pan", pan)
-                # ---------------------------
 
                 # --- Update Preview Button ---
                 if st.button("⚙️ Update Preview", key=f"update_preview_{track_id}", help="Generate the 60s preview waveform/audio with the current settings."):
@@ -1091,15 +1200,11 @@ class UIManager:
                         with st.spinner("Generating preview..."):
                             preview_audio = get_preview_audio(track_data, preview_duration_s=PREVIEW_DURATION_S)
                             if preview_audio is not None and preview_audio.size > 0:
-                                # Save new preview
                                 new_preview_path = save_audio_to_temp(preview_audio, track_sr)
                                 if new_preview_path:
-                                    # Get old path *before* updating state
                                     old_preview_path = track_data.get("preview_temp_file_path")
-                                    # Update state with new path
                                     self.app_state.update_track_param(track_id, "preview_temp_file_path", new_preview_path)
-                                    self.app_state.increment_update_counter(track_id)  # Force audix refresh
-                                    # Clean up old file *after* state update
+                                    self.app_state.increment_update_counter(track_id)
                                     if old_preview_path and old_preview_path != new_preview_path and os.path.exists(old_preview_path):
                                         try:
                                             os.remove(old_preview_path)
@@ -1111,7 +1216,7 @@ class UIManager:
                                     st.error("Failed to save new preview file.")
                             else:
                                 st.error("Failed to generate preview audio.")
-                        st.rerun()  # Rerun to display the new preview
+                        st.rerun()
                     else:
                         st.warning("No original audio data to generate preview from.")
             except Exception as e:
@@ -1119,15 +1224,27 @@ class UIManager:
                 st.error(f"Error waveform/effects: {e}")
 
     def _render_track_controls_col(self, track_id: TrackID, track_data: TrackData, column: st.delta_generator.DeltaGenerator) -> bool:
-        """Renders the controls (name, mute, solo, delete)."""
-        # (Implementation remains the same as previous version)
+        """Renders the controls (name, type, mute, solo, delete)."""
         delete_clicked = False
         with column:
             try:
-                st.markdown("**Track Controls**")
-                name = st.text_input("Track Name", value=track_data.get("name", "Unnamed"), key=f"name_{track_id}", help="Rename track.")
+                st.markdown("**Track Details**")
+                name = st.text_input("Name", value=track_data.get("name", "Unnamed"), key=f"name_{track_id}", help="Rename track.")
                 if name != track_data.get("name"):
                     self.app_state.update_track_param(track_id, "name", name)
+
+                # --- Track Type Selector ---
+                current_type = track_data.get("track_type", TRACK_TYPE_OTHER)
+                try:
+                    current_index = TRACK_TYPES.index(current_type)
+                except ValueError:
+                    current_index = TRACK_TYPES.index(TRACK_TYPE_OTHER)  # Default if invalid
+                new_type = st.selectbox("Type", TRACK_TYPES, index=current_index, key=f"type_{track_id}", help="Categorize this layer (affects icon).")
+                if new_type != current_type:
+                    self.app_state.update_track_param(track_id, "track_type", new_type)
+                    st.rerun()  # Rerun to update icon immediately
+                # --------------------------
+
                 st.caption("Mixing (Live Effect)")
                 ms_col1, ms_col2 = st.columns(2)
                 mute = ms_col1.checkbox("Mute", value=track_data.get("mute", False), key=f"mute_{track_id}", help="Silence track in final mix.")
@@ -1146,10 +1263,46 @@ class UIManager:
         return delete_clicked
 
     def render_master_controls(self):
-        """Renders the master preview and export buttons."""
-        # (Implementation remains the same as previous version)
+        """Renders the master preview, export, and fade controls."""
         st.divider()
         st.header("🔊 Master Output")
+        # --- Fade Controls ---
+        st.markdown("**Master Fades (Applied on Export)**")
+        fade_cols = st.columns(2)
+        fade_in_duration = fade_cols[0].slider(
+            "Fade In (s)", 0.0, 10.0, st.session_state.get("master_fade_in", 0.0), 0.5, key="master_fade_in", help="Duration of fade-in at the start of the exported file."
+        )
+        fade_out_duration = fade_cols[1].slider(
+            "Fade Out (s)", 0.0, 10.0, st.session_state.get("master_fade_out", 0.0), 0.5, key="master_fade_out", help="Duration of fade-out at the end of the exported file."
+        )
+        # REMOVED redundant session state writes
+        st.markdown("---")
+        # --------------------
+
+        # --- Export Filename ---
+        default_filename = "mindmorph_mix"
+        export_filename_input = st.text_input(
+            "Export Filename (no extension):",
+            value=st.session_state.get("export_filename", default_filename),
+            key="export_filename",
+            help="Enter the desired name for the downloaded file.",
+        )
+        # Basic sanitization: remove invalid characters for filenames
+        sanitized_filename = re.sub(r'[\\/*?:"<>|]', "", export_filename_input).strip()
+        if not sanitized_filename:
+            sanitized_filename = default_filename  # Use default if empty after sanitizing
+        # Store sanitized name in a DIFFERENT state key if needed, or just use it directly in download
+        # We don't need to write back to st.session_state.export_filename here.
+        # -----------------------
+
+        # --- Calculated Duration Display ---
+        if "calculated_mix_duration_s" in st.session_state and st.session_state.calculated_mix_duration_s is not None:
+            duration_str = f"{st.session_state.calculated_mix_duration_s:.2f}"
+            st.info(f"Estimated Full Mix Duration: **{duration_str} seconds**")
+        st.caption("Note: Export time depends on total duration and effects used.")
+        # -----------------------------------
+
+        # --- Preview/Export Buttons ---
         master_cols = st.columns(2)
         with master_cols[0]:
             st.button(
@@ -1160,61 +1313,150 @@ class UIManager:
                 on_click=self._handle_preview_click,
             )
         with master_cols[1]:
-            st.button(
-                "💾 Export Full Mix (.wav)", key="export_mix", use_container_width=True, help="Generate the complete final mix for download.", on_click=self._handle_export_click
+            # --- Export Format Selection ---
+            export_format = st.radio(
+                "Export Format:",
+                ["WAV", "MP3"],
+                key="export_format",
+                horizontal=True,
+                help="Choose WAV (lossless, large) or MP3 (compressed, smaller)." if PYDUB_AVAILABLE else "WAV format only (MP3 requires pydub/ffmpeg).",
             )
+            # REMOVED redundant session state write: st.session_state.export_format = export_format
+            # -----------------------------
+            export_disabled = export_format == "MP3" and not PYDUB_AVAILABLE
+            export_button_label = f"💾 Export Full Mix (.{export_format.lower()})"
+            export_help = f"Generate the complete final mix as .{export_format.lower()}."
+            if export_disabled:
+                export_help += " MP3 export disabled (pydub/ffmpeg missing)."
+
+            st.button(export_button_label, key="export_mix", use_container_width=True, help=export_help, on_click=self._handle_export_click, disabled=export_disabled)
+
+            # --- Download Button ---
             if "export_buffer" in st.session_state and st.session_state.export_buffer:
+                file_ext = st.session_state.get("export_file_ext", "wav")
+                # Use the sanitized filename from session state
+                download_filename = f"{st.session_state.get('export_filename_final', 'mindmorph_mix')}.{file_ext}"  # Read sanitized name
+                mime_type = f"audio/{file_ext}"
                 st.download_button(
-                    label="⬇️ Download Full Mix (.wav)",
+                    label=f"⬇️ Download: {download_filename}",
                     data=st.session_state.export_buffer,
-                    file_name="mindmorph_mix.wav",
-                    mime="audio/wav",
+                    file_name=download_filename,
+                    mime=mime_type,
                     key="download_export_key",
                     use_container_width=True,
                 )
+                # Clear buffer after showing button
                 st.session_state.export_buffer = None
+                st.session_state.export_file_ext = None
+                st.session_state.calculated_mix_duration_s = None  # Clear duration after download
+                st.session_state.export_filename_final = None  # Clear final filename
+            # ----------------------
 
     def _handle_preview_click(self):
         """Callback for Preview Mix button."""
-        # (Implementation remains the same)
         logger.info("Preview Mix button clicked.")
         tracks = self.app_state.get_all_tracks()
         if "preview_audio" in st.session_state:
             del st.session_state.preview_audio
+        # Clear calculated duration when generating preview
+        if "calculated_mix_duration_s" in st.session_state:
+            del st.session_state.calculated_mix_duration_s
         if not tracks:
             st.warning("No tracks loaded.")
             return
         with st.spinner("Generating preview mix..."):
-            mix_preview = mix_tracks(tracks, preview=True)  # mix_tracks now handles full processing
-            if mix_preview.size > 0:
+            mix_preview, _ = mix_tracks(tracks, preview=True, fade_in_s=0.0, fade_out_s=0.0)
+            if mix_preview is not None and mix_preview.size > 0:
                 st.session_state.preview_audio = save_audio(mix_preview, GLOBAL_SR)
                 logger.info("Preview generated.")
             else:
                 logger.warning("Preview mix empty.")
 
     def _handle_export_click(self):
-        """Callback for Export Mix button."""
-        # (Implementation remains the same)
+        """Callback for Export Mix button. Calculates duration first."""
         logger.info("Export Full Mix button clicked.")
         tracks = self.app_state.get_all_tracks()
+        export_format = st.session_state.get("export_format", "WAV").lower()
+        fade_in = st.session_state.get("master_fade_in", 0.0)
+        fade_out = st.session_state.get("master_fade_out", 0.0)
+        # --- Get sanitized filename from state ---
+        export_filename_base = st.session_state.get("export_filename", "mindmorph_mix")
+        st.session_state.export_filename_final = export_filename_base  # Store for download button
+        # -----------------------------------------
+
         if "export_buffer" in st.session_state:
             del st.session_state.export_buffer
+        if "export_file_ext" in st.session_state:
+            del st.session_state.export_file_ext
+        if "calculated_mix_duration_s" in st.session_state:
+            del st.session_state.calculated_mix_duration_s  # Clear old duration
         if not tracks:
             st.warning("No tracks loaded.")
             return
-        with st.spinner("Generating full mix... This may take time."):
-            full_mix = mix_tracks(tracks, preview=False)  # mix_tracks now handles full processing
-            if full_mix.size > 0:
-                st.session_state.export_buffer = save_audio(full_mix, GLOBAL_SR)
-                logger.info("Full mix generated.")
+
+        # --- Calculate Duration First ---
+        calculated_max_len = 0
+        processed_lengths = {}
+        valid_ids_for_len_calc = []
+        solo_active = any(t.get("solo", False) for t in tracks.values())
+        with st.spinner("Calculating final mix duration..."):
+            for track_id, t_data in tracks.items():
+                is_active = t_data.get("solo", False) if solo_active else not t_data.get("mute", False)
+                original_audio = t_data.get("original_audio")
+                if is_active and original_audio is not None and original_audio.size > 0:
+                    full_processed = apply_all_effects(t_data)
+                    processed_lengths[track_id] = len(full_processed)
+                    valid_ids_for_len_calc.append(track_id)
+            if valid_ids_for_len_calc:
+                calculated_max_len = max(processed_lengths.values())
+            st.session_state.calculated_mix_duration_s = calculated_max_len / GLOBAL_SR if GLOBAL_SR > 0 else 0
+            logger.info(f"Calculated mix duration (pre-looping): {st.session_state.calculated_mix_duration_s:.2f}s")
+        # -----------------------------
+
+        # Now generate the actual mix
+        with st.spinner(f"Generating full mix ({export_format.upper()})... This may take time."):
+            full_mix, final_mix_len_samples = mix_tracks(tracks, preview=False, fade_in_s=fade_in, fade_out_s=fade_out)
+            if final_mix_len_samples is not None:
+                st.session_state.calculated_mix_duration_s = final_mix_len_samples / GLOBAL_SR if GLOBAL_SR > 0 else 0
+                logger.info(f"Actual final mix duration (post-looping): {st.session_state.calculated_mix_duration_s:.2f}s")
+
+            if full_mix is not None and full_mix.size > 0:
+                if export_format == "wav":
+                    st.session_state.export_buffer = save_audio(full_mix, GLOBAL_SR)
+                    st.session_state.export_file_ext = "wav"
+                    logger.info("Full WAV mix generated.")
+                elif export_format == "mp3" and PYDUB_AVAILABLE:
+                    try:
+                        logger.info("Converting full mix to MP3...")
+                        audio_int16 = (full_mix * 32767).astype(np.int16)
+                        segment = AudioSegment(audio_int16.tobytes(), frame_rate=GLOBAL_SR, sample_width=audio_int16.dtype.itemsize, channels=2)
+                        mp3_buffer = BytesIO()
+                        segment.export(mp3_buffer, format="mp3", bitrate="192k")
+                        mp3_buffer.seek(0)
+                        st.session_state.export_buffer = mp3_buffer
+                        st.session_state.export_file_ext = "mp3"
+                        logger.info("Full MP3 mix generated.")
+                    except Exception as e_mp3:
+                        logger.exception("Failed to export as MP3.")
+                        st.error(f"MP3 Export Failed: {e_mp3}. Check if ffmpeg is installed and accessible.")
+                        st.session_state.export_buffer = None
+                        st.session_state.export_file_ext = None
+                else:
+                    logger.error(f"Unsupported export format requested or pydub missing: {export_format}")
+                    st.error(f"Cannot export as {export_format.upper()}.")
+                    st.session_state.export_buffer = None
+                    st.session_state.export_file_ext = None
             else:
                 logger.warning("Full mix empty.")
+                st.warning("Generated mix is empty.")
+                st.session_state.export_buffer = None
+                st.session_state.export_file_ext = None
 
     def render_preview_audio_player(self):
         """Displays the preview audio player if preview data exists in state."""
         # (Implementation remains the same)
         if "preview_audio" in st.session_state and st.session_state.preview_audio:
-            st.markdown("**Preview:**")
+            st.markdown("**Mix Preview (10s):**")  # Clarified label
             st.audio(st.session_state.preview_audio, format="audio/wav")
             st.session_state.preview_audio = None
 
@@ -1233,16 +1475,18 @@ class UIManager:
                   * Use the options on the left to add your audio layers. The *full* audio is loaded/generated.
 
               2.  **🎚️ Edit Tracks (Main Panel):**
-                  * Each track appears below.
-                  * **Track Settings (Speed, Pitch, Filter, Loop, Volume, Pan):** Adjust these settings.
+                  * Each track appears below. Set its **Type** (Affirmation, Background, etc.) using the dropdown.
+                  * **Track Settings (Reverse, Speed, Pitch, Filter, Loop, Volume, Pan):** Adjust these settings.
                   * **Click `⚙️ Update Preview`** to generate a 60-second preview waveform/audio incorporating **all** current settings for that track. *(Note: Looping effect is only calculated during final mix/export, not shown in preview).*
                   * **Track Controls (Mute, Solo):** These affect the final mix directly without needing 'Update Preview'.
                   * `Track Name`: Rename tracks.
                   * `🗑️ Delete Track`: Remove unwanted tracks.
 
               3.  **🔊 Mix & Export (Bottom Panel):**
-                  * `🎧 Preview Mix (10s)`: Hear the start of the combined audio. This processes the *full duration* of all tracks with *all* saved settings.
-                  * `💾 Export Full Mix (.wav)`: Generate the final WAV file using the *full* audio tracks and all saved settings. Click the download button.
+                  * Set optional **Master Fade In/Out** durations (applied only to the final export).
+                  * Enter a **Filename** for your download.
+                  * `🎧 Preview Mix (10s)`: Hear the start of the combined audio. This processes the *full duration* of all tracks with *all* saved settings (fades not applied here).
+                  * `💾 Export Full Mix`: Choose WAV or MP3 (if available). This generates the final file using the *full* audio tracks, all settings, and master fades. Click the download button.
 
               **Tips:**
               * The editor preview is limited to 60s for performance, but the final export uses the full audio.
@@ -1377,8 +1621,11 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         logger.exception("A critical error occurred in main execution.")
-        st.error("A critical error occurred. Please check the logs (`editor_oop.log`) or restart.")
-        st.code(traceback.format_exc())
+        # --- Changed to log error instead of showing in UI ---
+        logger.error(f"Unhandled exception in main: {e}")
+        st.error("An unexpected error occurred. Please check the application logs or try reloading.")
+        # st.code(traceback.format_exc()) # Avoid showing full traceback in UI
+        # ----------------------------------------------------
     # Attempt to stop listener - might not execute reliably
     # logger.info("Attempting to stop logging listener.")
     # if 'listener' in locals() and listener is not None and listener.is_alive(): listener.stop()

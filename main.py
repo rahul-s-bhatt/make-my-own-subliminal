@@ -1,6 +1,6 @@
 # ==========================================
 # MindMorph - Pro Subliminal Audio Editor
-# Version: 4.3 (OOP - Fixed Filename Session State Error)
+# Version: 4.4 (OOP - Efficient Sequential Export)
 # ==========================================
 # --- Early Config ---
 import os
@@ -118,7 +118,7 @@ TRACK_TYPES = [TRACK_TYPE_AFFIRMATION, TRACK_TYPE_BACKGROUND, TRACK_TYPE_FREQUEN
 # ==========================================
 # 1. Audio Processing Utilities (Functions)
 # ==========================================
-# (Functions load_audio, save_audio, save_audio_to_temp, generate*, apply*, mix_tracks remain unchanged from v4.0)
+# (Functions load_audio, save_audio, save_audio_to_temp, generate*, apply*, etc. remain unchanged from v4.0)
 # ... (Keep all audio utility functions from the previous version here) ...
 def load_audio(file_source: UploadedFile | BytesIO | str, target_sr: SampleRate = GLOBAL_SR) -> tuple[AudioData, SampleRate]:
     """Loads, ensures stereo, and resamples audio."""
@@ -376,112 +376,134 @@ def get_preview_audio(track_data: TrackData, preview_duration_s: int = PREVIEW_D
         return None
 
 
+# --- REVISED mix_tracks for Sequential Processing ---
 def mix_tracks(tracks_dict: Dict[TrackID, TrackData], preview: bool = False, fade_in_s: float = 0.0, fade_out_s: float = 0.0) -> Tuple[Optional[AudioData], Optional[int]]:
-    """Mixes tracks. Applies full effects on-the-fly. Handles looping & fades."""
-    logger.info(f"Starting track mixing (non-destructive). Preview: {preview}, FadeIn: {fade_in_s}s, FadeOut: {fade_out_s}s")
+    """
+    Mixes tracks sequentially for memory efficiency.
+    Applies effects, looping, padding, volume/pan per track.
+    Returns tuple: (mixed_audio_data or None, target_mix_length_samples or None)
+    """
+    logger.info(f"Starting track mixing (Sequential). Preview: {preview}, FadeIn: {fade_in_s}s, FadeOut: {fade_out_s}s")
     if not tracks_dict:
         logging.warning("Mix called but no tracks.")
         return None, None
 
-    processed_segments = {}  # Store processed audio (full or segment)
-    max_len = 0
     valid_track_ids_for_mix = []
+    estimated_processed_lengths = {}
     solo_active = any(t.get("solo", False) for t in tracks_dict.values())
     logger.debug(f"Solo active: {solo_active}")
 
-    # --- Determine target length and process segments ---
-    target_mix_len_samples = 0  # Will be calculated or set for preview
+    # --- Step 1: Estimate final lengths and identify active tracks ---
+    logger.info("Step 1: Estimating track lengths after speed changes.")
+    for track_id, t_data in tracks_dict.items():
+        is_active = t_data.get("solo", False) if solo_active else not t_data.get("mute", False)
+        original_audio = t_data.get("original_audio")
+        if is_active and original_audio is not None and original_audio.size > 0:
+            valid_track_ids_for_mix.append(track_id)
+            original_len = len(original_audio)
+            speed_factor = t_data.get("speed_factor", 1.0)
+            # Estimate length after speed change (most significant length modifier)
+            estimated_len = int(original_len / speed_factor) if speed_factor > 0 else original_len
+            estimated_processed_lengths[track_id] = estimated_len
+            logger.debug(f"Track '{t_data.get('name', track_id)}': Original len={original_len}, Speed={speed_factor}, Estimated len={estimated_len}")
+        else:
+            logger.debug(f"Skipping track '{t_data.get('name', track_id)}' from length estimation (muted/soloed/no audio).")
 
+    if not valid_track_ids_for_mix:
+        logging.warning("No valid tracks found for mixing.")
+        return None, None
+
+    # --- Step 2: Determine target mix length ---
+    target_mix_len_samples = max(estimated_processed_lengths.values()) if estimated_processed_lengths else 0
+    logger.info(f"Target mix length based on estimations: {target_mix_len_samples} samples ({target_mix_len_samples / GLOBAL_SR:.2f}s)")
+
+    # Adjust for preview mode
     if preview:
-        target_mix_len_samples = int(GLOBAL_SR * MIX_PREVIEW_DURATION_S)
-        process_duration_s = MIX_PREVIEW_DURATION_S + MIX_PREVIEW_PROCESSING_BUFFER_S
-        logger.info(f"Preview mode: Target mix length {target_mix_len_samples} samples ({MIX_PREVIEW_DURATION_S}s). Processing ~{process_duration_s}s per track.")
-    else:
-        logger.info("Full mix mode: Calculating full lengths.")
-        temp_full_lengths = {}
-        for track_id, t_data in tracks_dict.items():
-            is_active = t_data.get("solo", False) if solo_active else not t_data.get("mute", False)
-            original_audio = t_data.get("original_audio")
-            if is_active and original_audio is not None and original_audio.size > 0:
-                logger.debug(f"Processing FULL track '{t_data.get('name', track_id)}' for length.")
-                full_processed = apply_all_effects(t_data)  # Includes potential reversal
-                temp_full_lengths[track_id] = len(full_processed)
-                processed_segments[track_id] = full_processed  # Store for later use
-                valid_track_ids_for_mix.append(track_id)
-            else:
-                logger.debug(f"Skipping track '{t_data.get('name', track_id)}' (muted/soloed/no audio).")
-        if not valid_track_ids_for_mix:
-            logging.warning("No valid tracks for full mix.")
-            return None, None
-        target_mix_len_samples = max(temp_full_lengths.values()) if temp_full_lengths else 0
-        logger.info(f"Full mix mode: Target length is {target_mix_len_samples} samples ({target_mix_len_samples / GLOBAL_SR:.2f}s)")
+        preview_target_len = int(GLOBAL_SR * MIX_PREVIEW_DURATION_S)
+        if target_mix_len_samples > preview_target_len:
+            logger.info(f"Preview mode: Limiting mix length from {target_mix_len_samples} to {preview_target_len} samples.")
+            target_mix_len_samples = preview_target_len
 
     if target_mix_len_samples <= 0:
         logging.warning("Mix length <= 0.")
         return None, None
 
-    # --- Process required segments (only needed if preview, otherwise already done) ---
-    if preview:
-        for track_id, t_data in tracks_dict.items():
-            is_active = t_data.get("solo", False) if solo_active else not t_data.get("mute", False)
-            original_audio = t_data.get("original_audio")
-            # Only process if it wasn't already processed in the full mix check (which shouldn't happen in preview mode)
-            if track_id not in processed_segments and is_active and original_audio is not None and original_audio.size > 0:
-                logger.debug(f"Processing PREVIEW segment for track '{t_data.get('name', track_id)}'.")
-                process_samples = min(len(original_audio), int(GLOBAL_SR * process_duration_s))
-                segment = original_audio[:process_samples].copy()
-                processed_segment = apply_all_effects(t_data, audio_segment=segment)  # Includes potential reversal
-                processed_segments[track_id] = processed_segment
-                valid_track_ids_for_mix.append(track_id)  # Ensure it's in the list
-        # Remove duplicates just in case
-        valid_track_ids_for_mix = list(set(valid_track_ids_for_mix))
-        if not valid_track_ids_for_mix:
-            logging.warning("No valid tracks found for preview mix.")
-            return None, None
-
-    # --- Create mix buffer and combine tracks ---
+    # --- Step 3: Create mix buffer and process/mix tracks sequentially ---
     mix = np.zeros((target_mix_len_samples, 2), dtype=np.float32)
-    logger.info(f"Mixing {len(valid_track_ids_for_mix)} tracks. Target length: {target_mix_len_samples / GLOBAL_SR:.2f}s")
+    logger.info(f"Mixing {len(valid_track_ids_for_mix)} tracks sequentially. Target length: {target_mix_len_samples / GLOBAL_SR:.2f}s")
+
     for track_id in valid_track_ids_for_mix:
         t_data = tracks_dict[track_id]
         track_name = t_data.get("name", track_id)
-        audio_segment = processed_segments.get(track_id)
-        if audio_segment is None or audio_segment.size == 0:
-            logger.warning(f"Processed audio missing for '{track_name}'. Skipping.")
+        logger.debug(f"Processing and mixing track: '{track_name}'")
+
+        original_audio = t_data.get("original_audio")
+        if original_audio is None or original_audio.size == 0:
+            logger.warning(f"Original audio missing for '{track_name}' during sequential mix. Skipping.")
             continue
-        final_audio_for_track = audio_segment
+
+        # --- Process FULL audio for this track ---
+        processed_audio = apply_all_effects(t_data)
+        if processed_audio is None or processed_audio.size == 0:
+            logger.warning(f"Processing failed or resulted in empty audio for '{track_name}'. Skipping.")
+            continue
+        actual_processed_len = len(processed_audio)
+        logger.debug(f"Track '{track_name}': Actual processed length = {actual_processed_len}")
+        # -----------------------------------------
+
+        final_audio_for_track = processed_audio  # Start with the processed audio
+
+        # --- Apply Looping (only for FULL mix, not preview) ---
         should_loop = t_data.get("loop_to_fit", False)
-        if not preview and should_loop:  # Only loop in full mix mode
-            current_len = len(audio_segment)
-            if target_mix_len_samples > 0 and current_len > 0 and current_len < target_mix_len_samples:
-                logger.info(f"Looping track '{track_name}' from {current_len} to {target_mix_len_samples} samples for mix.")
-                n_repeats = target_mix_len_samples // current_len
-                remainder = target_mix_len_samples % current_len
-                looped_list = [audio_segment] * n_repeats
+        if not preview and should_loop:
+            if target_mix_len_samples > 0 and actual_processed_len > 0 and actual_processed_len < target_mix_len_samples:
+                logger.info(f"Looping track '{track_name}' from {actual_processed_len} to {target_mix_len_samples} samples.")
+                n_repeats = target_mix_len_samples // actual_processed_len
+                remainder = target_mix_len_samples % actual_processed_len
+                looped_list = [processed_audio] * n_repeats
                 if remainder > 0:
-                    looped_list.append(audio_segment[:remainder])
-                final_audio_for_track = np.concatenate(looped_list, axis=0)
-                logger.debug(f"Looping complete for '{track_name}'. New length: {len(final_audio_for_track)}")
+                    looped_list.append(processed_audio[:remainder])
+                try:
+                    final_audio_for_track = np.concatenate(looped_list, axis=0)
+                    logger.debug(f"Looping complete for '{track_name}'. New length: {len(final_audio_for_track)}")
+                except ValueError as e_concat:
+                    logger.error(f"Error concatenating looped audio for '{track_name}': {e_concat}. Skipping loop.")
+                    final_audio_for_track = processed_audio  # Fallback to non-looped
             else:
-                logger.debug(f"Looping not needed for '{track_name}' (curr: {current_len}, max: {target_mix_len_samples})")
+                logger.debug(f"Looping not needed for '{track_name}' (curr: {actual_processed_len}, target: {target_mix_len_samples})")
+        # -----------------------------------------------------
+
+        # --- Pad or Truncate to final mix length ---
         current_len = len(final_audio_for_track)
         if current_len < target_mix_len_samples:
             audio_adjusted = np.pad(final_audio_for_track, ((0, target_mix_len_samples - current_len), (0, 0)), mode="constant")
         elif current_len > target_mix_len_samples:
             audio_adjusted = final_audio_for_track[:target_mix_len_samples, :]
         else:
-            audio_adjusted = final_audio_for_track.copy()
+            audio_adjusted = final_audio_for_track  # No copy needed if length matches exactly
+
+        # --- Apply Volume and Pan ---
         pan = t_data.get("pan", 0.0)
         vol = t_data.get("volume", 1.0)
-        logger.debug(f"Track '{track_name}': vol={vol:.2f}, pan={pan:.2f}")
+        logger.debug(f"Track '{track_name}': Applying vol={vol:.2f}, pan={pan:.2f}")
         pan_rad = (pan + 1) * np.pi / 4
         left_gain = vol * np.cos(pan_rad)
         right_gain = vol * np.sin(pan_rad)
-        panned_audio = np.zeros_like(audio_adjusted)
-        panned_audio[:, 0] = audio_adjusted[:, 0] * left_gain
-        panned_audio[:, 1] = audio_adjusted[:, 1] * right_gain
-        mix += panned_audio
-        logger.debug(f"Added track '{track_name}' to mix.")
+        # Apply gain directly to the adjusted buffer segment
+        if audio_adjusted.ndim == 2 and audio_adjusted.shape[1] == 2:
+            mix[:, 0] += audio_adjusted[:, 0] * left_gain
+            mix[:, 1] += audio_adjusted[:, 1] * right_gain
+        elif audio_adjusted.ndim == 1:  # Handle potential mono case (though unlikely with current load_audio)
+            logger.warning(f"Track '{track_name}' is mono during mixing. Applying volume only.")
+            mix[:, 0] += audio_adjusted * vol * 0.707  # Distribute mono to both channels approx.
+            mix[:, 1] += audio_adjusted * vol * 0.707
+        logger.debug(f"Added track '{track_name}' to mix buffer.")
+
+        # --- Explicitly clear large processed data for this track (optional, Python's GC should handle it) ---
+        del processed_audio
+        del final_audio_for_track
+        del audio_adjusted
+        # ----------------------------------------------------------------------------------------------------
 
     final_mix = np.clip(mix, -1.0, 1.0)
 
@@ -836,6 +858,7 @@ class TTSGenerator:
 # ==========================================
 # 4. UI Management (Class) - COMMUNITY FEATURES
 # ==========================================
+# (UIManager class remains the same as v4.0, but render_master_controls updated)
 class UIManager:
     """Handles rendering Streamlit UI components using button-driven previews."""
 
@@ -845,7 +868,6 @@ class UIManager:
         logger.debug("UIManager initialized.")
 
     # (render_sidebar and its helpers _render_uploader, _render_affirmation_inputs, _render_binaural_generator, _render_solfeggio_generator remain the same as v4.0)
-    # ...
     def render_sidebar(self):
         with st.sidebar:
             logo_path = os.path.join("assets", "logo.png")
@@ -1292,7 +1314,7 @@ class UIManager:
         if not sanitized_filename:
             sanitized_filename = default_filename  # Use default if empty after sanitizing
         # Store sanitized name in a DIFFERENT state key if needed, or just use it directly in download
-        # We don't need to write back to st.session_state.export_filename here.
+        # REMOVED redundant session state write: st.session_state.export_filename = sanitized_filename
         # -----------------------
 
         # --- Calculated Duration Display ---
@@ -1321,7 +1343,7 @@ class UIManager:
                 horizontal=True,
                 help="Choose WAV (lossless, large) or MP3 (compressed, smaller)." if PYDUB_AVAILABLE else "WAV format only (MP3 requires pydub/ffmpeg).",
             )
-            # REMOVED redundant session state write: st.session_state.export_format = export_format
+            # REMOVED redundant session state write
             # -----------------------------
             export_disabled = export_format == "MP3" and not PYDUB_AVAILABLE
             export_button_label = f"💾 Export Full Mix (.{export_format.lower()})"
@@ -1358,7 +1380,6 @@ class UIManager:
         tracks = self.app_state.get_all_tracks()
         if "preview_audio" in st.session_state:
             del st.session_state.preview_audio
-        # Clear calculated duration when generating preview
         if "calculated_mix_duration_s" in st.session_state:
             del st.session_state.calculated_mix_duration_s
         if not tracks:
@@ -1381,6 +1402,10 @@ class UIManager:
         fade_out = st.session_state.get("master_fade_out", 0.0)
         # --- Get sanitized filename from state ---
         export_filename_base = st.session_state.get("export_filename", "mindmorph_mix")
+        # Sanitize again just in case, although text_input should handle it
+        export_filename_base = re.sub(r'[\\/*?:"<>|]', "", export_filename_base).strip()
+        if not export_filename_base:
+            export_filename_base = "mindmorph_mix"
         st.session_state.export_filename_final = export_filename_base  # Store for download button
         # -----------------------------------------
 
@@ -1404,19 +1429,23 @@ class UIManager:
                 is_active = t_data.get("solo", False) if solo_active else not t_data.get("mute", False)
                 original_audio = t_data.get("original_audio")
                 if is_active and original_audio is not None and original_audio.size > 0:
-                    full_processed = apply_all_effects(t_data)
-                    processed_lengths[track_id] = len(full_processed)
+                    # Estimate length after speed change
+                    original_len = len(original_audio)
+                    speed_factor = t_data.get("speed_factor", 1.0)
+                    estimated_len = int(original_len / speed_factor) if speed_factor > 0 else original_len
+                    processed_lengths[track_id] = estimated_len
                     valid_ids_for_len_calc.append(track_id)
             if valid_ids_for_len_calc:
                 calculated_max_len = max(processed_lengths.values())
             st.session_state.calculated_mix_duration_s = calculated_max_len / GLOBAL_SR if GLOBAL_SR > 0 else 0
-            logger.info(f"Calculated mix duration (pre-looping): {st.session_state.calculated_mix_duration_s:.2f}s")
+            logger.info(f"Calculated mix duration (pre-looping, based on speed): {st.session_state.calculated_mix_duration_s:.2f}s")
         # -----------------------------
 
         # Now generate the actual mix
         with st.spinner(f"Generating full mix ({export_format.upper()})... This may take time."):
             full_mix, final_mix_len_samples = mix_tracks(tracks, preview=False, fade_in_s=fade_in, fade_out_s=fade_out)
             if final_mix_len_samples is not None:
+                # Update duration with the *actual* length after mixing (includes looping)
                 st.session_state.calculated_mix_duration_s = final_mix_len_samples / GLOBAL_SR if GLOBAL_SR > 0 else 0
                 logger.info(f"Actual final mix duration (post-looping): {st.session_state.calculated_mix_duration_s:.2f}s")
 

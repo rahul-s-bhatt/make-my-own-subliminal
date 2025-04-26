@@ -1373,10 +1373,10 @@ class UIManager:
                 # --- Add Subliminalize Button for Affirmation Tracks ---
                 if track_data.get("track_type") == TRACK_TYPE_AFFIRMATION:
                     if st.button(
-                        "⚡ Subliminalize Preset", key=f"subliminalize_{track_id}", help="Quickly set high speed (4x) and low volume (0.05). Click 'Update Preview' after."
+                        "⚡ Subliminalize Preset", key=f"subliminalize_{track_id}", help="Quickly set high speed (10x) and low volume (0.05). Click 'Update Preview' after."
                     ):
                         logger.info(f"Subliminalize preset applied to track {track_id}")
-                        self.app_state.update_track_param(track_id, "speed_factor", 4.0)
+                        self.app_state.update_track_param(track_id, "speed_factor", 10.0)
                         self.app_state.update_track_param(track_id, "volume", 0.05)
                         self.app_state.update_track_param(track_id, "preview_settings_hash", None)  # Invalidate cache
                         st.toast("Subliminal preset applied! Click 'Update Preview'.", icon="⚡")
@@ -1398,7 +1398,7 @@ class UIManager:
                     if reverse_value != track_data.get("reverse_audio"):
                         self.app_state.update_track_param(track_id, "reverse_audio", reverse_value)
                 with col_fx1_2:
-                    speed = st.slider("Speed", 0.25, 4.0, track_data.get("speed_factor", 1.0), 0.05, key=f"speed_{track_id}", help="Playback speed (>1 faster, <1 slower).")
+                    speed = st.slider("Speed", 0.25, 10.0, track_data.get("speed_factor", 1.0), 0.05, key=f"speed_{track_id}", help="Playback speed (>1 faster, <1 slower).")
                     if speed != track_data.get("speed_factor"):
                         self.app_state.update_track_param(track_id, "speed_factor", speed)
                 with col_fx1_3:

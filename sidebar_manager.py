@@ -15,7 +15,11 @@ from PIL import Image
 
 # Import necessary components from other modules
 from app_state import AppState, TrackData, TrackType
-from audio_utils import AudioData, generate_binaural_beats, generate_isochronic_tones, generate_noise, generate_solfeggio_frequency, load_audio
+from audio_generators import generate_binaural_beats, generate_isochronic_tones, generate_noise, generate_solfeggio_frequency  # Moved from audio_utils
+
+# --- Updated Audio Imports ---
+from audio_io import load_audio  # Moved from audio_utils
+from audio_processing import AudioData  # Type hint might be defined here or elsewhere, ensure consistency
 from config import (
     ASSETS_DIR,
     GLOBAL_SR,
@@ -23,15 +27,17 @@ from config import (
     MAX_AFFIRMATION_CHARS,
     MAX_AUDIO_DURATION_S,
     PROJECT_FILE_VERSION,
+    # TRACK_TYPES, # Not directly needed here
     TRACK_TYPE_AFFIRMATION,
     TRACK_TYPE_BACKGROUND,
     TRACK_TYPE_FREQUENCY,
     TRACK_TYPE_OTHER,
     TRACK_TYPE_VOICE,
-    TRACK_TYPES,  # Needed? Maybe not directly
     get_default_track_params,  # Import the function itself
 )
 from tts_generator import TTSGenerator
+
+# --- End Updated Audio Imports ---
 from utils import read_text_file
 
 # Get a logger for this module
@@ -132,7 +138,7 @@ class SidebarManager:
                 existing_track_id = current_tracks_missing_audio.get(file.name)
 
                 with st.spinner(f"Loading {file.name}..."):
-                    audio, sr = load_audio(file, target_sr=GLOBAL_SR)  # From audio_utils
+                    audio, sr = load_audio(file, target_sr=GLOBAL_SR)  # Now from audio_io
 
                 if audio is not None and audio.size > 0:
                     duration_seconds = len(audio) / sr if sr > 0 else 0
@@ -312,6 +318,7 @@ class SidebarManager:
                 default_track_name = preset_name
 
                 if preset_data["type"] == "binaural":
+                    # Use function from audio_generators
                     audio = generate_binaural_beats(preset_duration, preset_data["f_left"], preset_data["f_right"], GLOBAL_SR, preset_vol)
                     gen_params = {
                         "source_type": "binaural_preset",
@@ -321,6 +328,7 @@ class SidebarManager:
                         "gen_volume": preset_vol,
                     }
                 elif preset_data["type"] == "solfeggio":
+                    # Use function from audio_generators
                     audio = generate_solfeggio_frequency(preset_duration, preset_data["freq"], GLOBAL_SR, preset_vol)
                     gen_params = {"source_type": "solfeggio_preset", "gen_duration": preset_duration, "gen_freq": preset_data["freq"], "gen_volume": preset_vol}
 
@@ -351,6 +359,7 @@ class SidebarManager:
 
         if st.button("Generate Binaural Track", key="sidebar_generate_bb", help="Create track with these settings."):
             with st.spinner("Generating Binaural Beats..."):
+                # Use function from audio_generators
                 audio = generate_binaural_beats(bb_duration, bb_fleft, bb_fright, GLOBAL_SR, bb_vol)
             if audio is not None and audio.size > 0:
                 track_params = get_default_track_params()
@@ -390,6 +399,7 @@ class SidebarManager:
 
         if st.button("Generate Solfeggio Track", key="sidebar_generate_solf", help="Create track with this tone."):
             with st.spinner("Generating Solfeggio Tone..."):
+                # Use function from audio_generators
                 audio = generate_solfeggio_frequency(duration, freq, GLOBAL_SR, vol)
             if audio is not None and audio.size > 0:
                 track_params = get_default_track_params()
@@ -419,6 +429,7 @@ class SidebarManager:
 
         if st.button("Generate Isochronic Track", key="sidebar_generate_iso", help="Create track with these settings."):
             with st.spinner("Generating Isochronic Tones..."):
+                # Use function from audio_generators
                 audio = generate_isochronic_tones(iso_duration, iso_carrier, iso_pulse, GLOBAL_SR, iso_vol)
             if audio is not None and audio.size > 0:
                 track_params = get_default_track_params()
@@ -456,7 +467,7 @@ class SidebarManager:
 
         if st.button(f"Generate {noise_type} Track", key="sidebar_generate_noise"):
             with st.spinner(f"Generating {noise_type}..."):
-                audio = generate_noise(noise_type, noise_duration, GLOBAL_SR, noise_vol)  # From audio_utils
+                audio = generate_noise(noise_type, noise_duration, GLOBAL_SR, noise_vol)  # From audio_generators
                 if audio is not None and audio.size > 0:
                     track_params = get_default_track_params()
                     default_name = f"{noise_type}"

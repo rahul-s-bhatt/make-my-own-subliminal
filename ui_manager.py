@@ -15,7 +15,12 @@ import streamlit as st
 
 # Import necessary components from other modules
 from app_state import AppState
-from audio_utils import AudioData, mix_tracks, save_audio_to_bytesio
+
+# --- Updated Audio Imports ---
+from audio_io import save_audio_to_bytesio  # Moved from audio_utils
+from audio_processing import AudioData, mix_tracks  # Moved from audio_utils
+
+# --- End Updated Audio Imports ---
 from config import (
     GLOBAL_SR,
     MIX_PREVIEW_DURATION_S,
@@ -184,11 +189,11 @@ class UIManager:
 
         with st.spinner("Generating preview mix..."):
             try:
-                mix_preview, _ = mix_tracks(  # From audio_utils
-                    tracks, preview=True, preview_duration_s=MIX_PREVIEW_DURATION_S, preview_buffer_s=MIX_PREVIEW_PROCESSING_BUFFER_S, target_sr=GLOBAL_SR
-                )
+                # Use function from audio_processing
+                mix_preview, _ = mix_tracks(tracks, preview=True, preview_duration_s=MIX_PREVIEW_DURATION_S, preview_buffer_s=MIX_PREVIEW_PROCESSING_BUFFER_S, target_sr=GLOBAL_SR)
                 if mix_preview is not None and mix_preview.size > 0:
-                    preview_buffer = save_audio_to_bytesio(mix_preview, GLOBAL_SR)  # From audio_utils
+                    # Use function from audio_io
+                    preview_buffer = save_audio_to_bytesio(mix_preview, GLOBAL_SR)
                     st.session_state.preview_audio_data = preview_buffer
                     logger.info("Preview mix generated successfully.")
                 elif mix_preview is not None:
@@ -244,7 +249,8 @@ class UIManager:
         # Generate Full Mix
         with st.spinner(f"Generating full mix ({export_format.upper()})... This may take time."):
             try:
-                full_mix, final_mix_len_samples = mix_tracks(tracks, preview=False, target_sr=GLOBAL_SR)  # From audio_utils
+                # Use function from audio_processing
+                full_mix, final_mix_len_samples = mix_tracks(tracks, preview=False, target_sr=GLOBAL_SR)
 
                 if final_mix_len_samples is not None:
                     st.session_state.calculated_mix_duration_s = final_mix_len_samples / GLOBAL_SR if GLOBAL_SR > 0 else 0
@@ -254,7 +260,8 @@ class UIManager:
 
                 if full_mix is not None and full_mix.size > 0:
                     if export_format == "wav":
-                        export_buffer = save_audio_to_bytesio(full_mix, GLOBAL_SR)  # From audio_utils
+                        # Use function from audio_io
+                        export_buffer = save_audio_to_bytesio(full_mix, GLOBAL_SR)
                         st.session_state.export_buffer = export_buffer
                         st.session_state.export_file_ext = "wav"
                         logger.info("Full WAV mix generated and stored.")

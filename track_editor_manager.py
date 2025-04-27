@@ -13,13 +13,19 @@ from PIL import Image
 
 # Import necessary components from other modules
 from app_state import AppState, TrackData, TrackID, TrackType
-from audio_utils import AudioData, SampleRate, get_preview_audio, save_audio_to_temp_file
+
+# --- Updated Audio Imports ---
+from audio_io import save_audio_to_temp_file  # Moved from audio_utils
+from audio_processing import AudioData, get_preview_audio  # Moved from audio_utils
+
+# --- End Updated Audio Imports ---
 from config import (
     FAVICON_PATH,  # For empty state message
     GLOBAL_SR,
     PREVIEW_DURATION_S,
     TRACK_TYPE_AFFIRMATION,
     TRACK_TYPE_OTHER,
+    TRACK_TYPES,  # Import TRACK_TYPES here as it's used in _render_track_controls_col
     ULTRASONIC_TARGET_FREQ,
 )
 
@@ -333,9 +339,11 @@ class TrackEditorManager:
                 ):
                     logger.info(f"Update Preview clicked for: '{track_data.get('name', 'N/A')}' ({track_id})")
                     with st.spinner("Generating preview audio..."):
-                        preview_audio = get_preview_audio(track_data, preview_duration_s=PREVIEW_DURATION_S)  # From audio_utils
+                        # Use function from audio_processing
+                        preview_audio = get_preview_audio(track_data, preview_duration_s=PREVIEW_DURATION_S)
                         if preview_audio is not None and preview_audio.size > 0:
-                            new_preview_path = save_audio_to_temp_file(preview_audio, track_sr)  # From audio_utils
+                            # Use function from audio_io
+                            new_preview_path = save_audio_to_temp_file(preview_audio, track_sr)
                             if new_preview_path:
                                 old_preview_path = track_data.get("preview_temp_file_path")
                                 new_settings_hash = self._calculate_preview_hash(track_data)
@@ -374,8 +382,7 @@ class TrackEditorManager:
                     st.rerun()
 
                 current_type = track_data.get("track_type", TRACK_TYPE_OTHER)
-                from config import TRACK_TYPES  # Import locally if needed
-
+                # TRACK_TYPES imported from config at top of file
                 try:
                     current_index = TRACK_TYPES.index(current_type)
                 except ValueError:

@@ -60,17 +60,14 @@ class SidebarUploader:
     def _handle_audio_upload(self):
         """Callback function to process uploaded audio files."""
         logger.debug(f"Callback triggered: _handle_audio_upload (key: {self.audio_uploader_key})")
-        # Get the list of UploadedFile objects from session state using the key
         uploaded_files = st.session_state.get(self.audio_uploader_key)
 
         if not uploaded_files:
             logger.debug("Audio upload callback triggered but no files found in session state.")
-            # Don't try to clear state here if it's already empty or None
-            return  # No files to process
+            return
 
-        # Make a copy of the list to iterate over
         files_to_process = list(uploaded_files)
-        files_processed_successfully = False  # Track if any file leads to a state change
+        files_processed_successfully = False
 
         current_tracks = self.app_state.get_all_tracks()
         current_track_filenames_with_audio = {
@@ -94,7 +91,7 @@ class SidebarUploader:
             except Exception as e:
                 logger.error(f"Error loading audio file {file.name} in callback: {e}")
                 st.error(f"Failed to load {file.name}: {e}")
-                continue  # Skip to next file on error
+                continue
 
             if audio is not None and audio.size > 0:
                 duration_seconds = len(audio) / sr if sr > 0 else 0
@@ -103,8 +100,7 @@ class SidebarUploader:
                     st.error(f"❌ File '{file.name}' too long ({duration_seconds:.1f}s). Max is {MAX_AUDIO_DURATION_S // 60} min.")
                     continue
 
-                # --- Process valid file ---
-                files_processed_successfully = True  # Mark that we processed at least one file
+                files_processed_successfully = True
 
                 if existing_track_id:
                     logger.info(f"Updating existing track '{self.app_state.get_track(existing_track_id).get('name')}' via callback.")
@@ -129,16 +125,10 @@ class SidebarUploader:
             else:
                 logger.warning(f"Skipped empty/invalid audio (callback): {file.name}")
 
-        # --- REMOVE state clearing attempt ---
-        # We accept that the widget might visually retain file names after processing via on_change
-        # The core logic of adding tracks works.
         if files_processed_successfully:
             logger.debug(f"Audio upload callback finished processing. Filenames might remain in widget.")
         elif uploaded_files:
             logger.debug("No audio files processed successfully in callback.")
-
-    # --- REMOVED _handle_affirmation_upload callback ---
-    # Logic moved to button click
 
     # --- Rendering Methods for Uploader Sections ---
 
@@ -180,18 +170,20 @@ class SidebarUploader:
             if st.button(
                 "Generate Affirmation Track", key="sidebar_generate_tts_from_text", use_container_width=True, type="primary", help="Convert the text above to a spoken audio track."
             ):
-                if not affirmation_text or not affirmation_text.strip():
+                # Read text directly from state when button is clicked
+                text_to_generate = st.session_state.get("sidebar_affirmation_text_area", "")
+                if not text_to_generate or not text_to_generate.strip():
                     st.warning("Please enter some text in the text area first.")
-                elif len(affirmation_text) > MAX_AFFIRMATION_CHARS:
-                    logger.warning(f"TTS Text input rejected: Length {len(affirmation_text)} exceeds limit {MAX_AFFIRMATION_CHARS}.")
-                    st.error(f"❌ Text is too long ({len(affirmation_text)} chars). Max is {MAX_AFFIRMATION_CHARS}.")
+                elif len(text_to_generate) > MAX_AFFIRMATION_CHARS:
+                    logger.warning(f"TTS Text input rejected: Length {len(text_to_generate)} exceeds limit {MAX_AFFIRMATION_CHARS}.")
+                    st.error(f"❌ Text is too long ({len(text_to_generate)} chars). Max is {MAX_AFFIRMATION_CHARS}.")
                 else:
                     default_name = "TTS Affirmations"
-                    if len(affirmation_text) > 30:
-                        default_name = f"TTS: {affirmation_text[:25]}..."
-                    self._generate_tts_track(affirmation_text, default_name)  # Use helper in this class
-                    # Clear text area after successful generation?
-                    st.session_state.sidebar_affirmation_text_area = ""
+                    if len(text_to_generate) > 30:
+                        default_name = f"TTS: {text_to_generate[:25]}..."
+                    self._generate_tts_track(text_to_generate, default_name)  # Use helper in this class
+                    # --- REMOVED state clearing attempt ---
+                    # st.session_state.sidebar_affirmation_text_area = "" # REMOVED THIS LINE
                     st.rerun()  # Rerun needed after button click generation
 
         # --- File Upload Tab ---
@@ -219,7 +211,6 @@ class SidebarUploader:
                 if uploaded_file:
                     file_processed = False
                     try:
-                        # with st.spinner(f"Reading {uploaded_file.name}..."): # Spinner on button click
                         text_from_file = read_text_file(uploaded_file)
 
                         if text_from_file is not None:
@@ -247,7 +238,6 @@ class SidebarUploader:
                             st.rerun()  # Rerun AFTER clearing state and adding track
                         except Exception as e_clear:
                             logger.error(f"Error trying to clear affirmation uploader state on button click: {e_clear}")
-                    # else: If not processed, don't clear, let user try again or upload different file
 
                 else:
                     st.warning("Please upload a .txt or .docx file first.")

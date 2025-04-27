@@ -4,60 +4,14 @@
 # ==========================================
 
 import logging
-import logging.handlers
-import os
-import queue
 from typing import Optional
 
 import docx  # Required for reading .docx files
 import streamlit as st  # TODO: Remove direct Streamlit UI calls
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 
-# Import constants from config
-from config import LOG_BACKUP_COUNT, LOG_FILE, LOG_FORMAT, LOG_MAX_BYTES
-
 # Get a logger for this module
 logger = logging.getLogger(__name__)
-
-# --- Logging Setup ---
-log_queue = queue.Queue(-1)  # Queue for handling logs asynchronously
-
-
-def setup_logging():
-    """Configures the application's logging."""
-    # Prevent adding handlers multiple times if setup_logging is called again
-    root_logger = logging.getLogger()
-    if any(isinstance(h, logging.handlers.QueueHandler) for h in root_logger.handlers):
-        logger.debug("Logging handlers already configured.")
-        return
-
-    logger.info(f"Setting up logging. Log file: {LOG_FILE}")
-    log_formatter = logging.Formatter(LOG_FORMAT)
-
-    # File handler (rotates logs)
-    file_handler = logging.handlers.RotatingFileHandler(LOG_FILE, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT)
-    file_handler.setFormatter(log_formatter)
-    file_handler.setLevel(logging.DEBUG)  # Log DEBUG level and above to file
-
-    # Queue handler (sends logs to the queue)
-    queue_handler = logging.handlers.QueueHandler(log_queue)
-    queue_handler.setLevel(logging.DEBUG)  # Send all logs to the queue
-
-    # Add queue handler to the root logger
-    root_logger.addHandler(queue_handler)
-    root_logger.setLevel(logging.DEBUG)  # Set root logger level
-
-    # Start the queue listener only once using session state
-    if "listener_started" not in st.session_state:
-        listener = logging.handlers.QueueListener(log_queue, file_handler, respect_handler_level=True)
-        listener.start()
-        st.session_state.listener_started = True
-        logger.info("Logging QueueListener started.")
-    else:
-        logger.debug("Logging QueueListener already running.")
-
-
-# --- File Reading ---
 
 
 def read_text_file(uploaded_file: UploadedFile) -> Optional[str]:
@@ -140,5 +94,6 @@ def read_text_file(uploaded_file: UploadedFile) -> Optional[str]:
 
 
 # Potential future additions:
+# - Logging setup function
 # - Function to sanitize filenames
 # - etc.

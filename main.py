@@ -4,41 +4,17 @@
 # Main Application Entry Point (Refactored)
 # ==========================================
 
-import json
 import logging
-import os
-import uuid  # Keep top-level if needed elsewhere, otherwise could move
+import os  # Keep for path checks if any remain
 
 import streamlit as st
 from PIL import Image
 
-from audio_generators import generate_binaural_beats, generate_isochronic_tones, generate_noise, generate_solfeggio_frequency  # Keep for handle_project_load
-
-# --- Keep imports needed for global scope or functions called before main() ---
-# Type Hint (can be defined centrally or imported from where it makes sense)
-# Assuming AudioData is defined/used within audio_generators or audio_processing
-from audio_processing import AudioData  # Keep if needed by handle_project_load
-
-# Configuration and Constants needed globally or in handle_project_load
-from config import (
-    FAVICON_PATH,
-    GLOBAL_SR,
-    PROJECT_FILE_VERSION,
-    TRACK_TYPE_OTHER,
-    get_default_track_params,  # Keep for handle_project_load
-)
-
-# Utility Functions
-from utils import setup_logging  # Keep for initial setup
-
-# --- Core Components - Moved inside main() ---
-# from app_state import AppState, TrackData, TrackType # MOVED
-# from tts_generator import TTSGenerator # MOVED
-# from ui_manager import UIManager # MOVED
-
+# --- Keep imports needed for initial setup ---
+from config import FAVICON_PATH
+from utils import setup_logging
 
 # --- Early Setup: Logging and Page Config ---
-# Configure logging as the first step
 setup_logging()
 logger = logging.getLogger(__name__)  # Get logger for this main module
 
@@ -54,182 +30,6 @@ except Exception as e:
 
 st.set_page_config(layout="wide", page_title="MindMorph - Pro Subliminal Editor", page_icon=page_icon)
 
-# --- Helper Functions ---
-
-
-def show_welcome_message():
-    """Displays the initial welcome message and mode explanation."""
-    # Check if the message has already been shown/dismissed
-    if "welcome_message_shown" not in st.session_state:
-        with st.container(border=True):
-            st.markdown("### 👋 Welcome to MindMorph!")
-            st.markdown("Create custom subliminal audio by layering sounds and applying effects.")
-            st.markdown("---")
-            st.markdown("#### ✨ Choose Your Experience:")
-            st.markdown("Use the **'Select Editor Mode'** option at the top of the main panel:")
-            st.markdown("- **Easy Mode:** Simplified interface, perfect for getting started quickly.")
-            st.markdown("- **Advanced Mode:** Access all features like detailed frequency generation and audio effects.")
-            st.markdown("*(You can switch modes any time!)*")
-            st.markdown("---")
-            st.markdown("#### Quick Start Workflow:")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.markdown("##### 1. Add Tracks ➕")
-                st.markdown("Use the **sidebar** (👈).")
-                st.caption("Upload, TTS, Noise, Freq.")
-            with col2:
-                st.markdown("##### 2. Edit Tracks 🎚️")
-                st.markdown("Adjust **settings** below.")
-                st.caption("Click 'Update Preview'!")
-            with col3:
-                st.markdown("##### 3. Mix & Export 🔊")
-                st.markdown("Use **master controls** (bottom).")
-                st.caption("Preview or Download")
-            st.markdown("---")
-            st.markdown("*(Click button below to hide this guide. Find details in Instructions at page bottom.)*")
-            # Center the button
-            button_cols = st.columns([1, 1.5, 1])  # Adjust ratios as needed
-            with button_cols[1]:
-                if st.button(
-                    "Got it! Let's Start Creating ✨",
-                    key="dismiss_welcome_button",  # Unique key
-                    type="primary",
-                    use_container_width=True,
-                ):
-                    st.session_state.welcome_message_shown = True
-                    logger.info("Welcome message dismissed by user.")
-                    st.rerun()  # Rerun to hide the message immediately
-
-
-def handle_project_load(app_state, tts_generator):  # Pass instances instead of importing AppState/TTSGenerator here
-    """Loads project data from session state if requested."""
-    # NOTE: app_state and tts_generator are now passed as arguments
-    logger.info("Checking for project load request.")
-    if st.session_state.get("project_load_requested", False):
-        logger.info("Project load requested. Processing uploaded file data.")
-        loaded_data = st.session_state.get("uploaded_project_file_data")
-
-        # Reset flags immediately
-        st.session_state.project_load_requested = False
-        st.session_state.uploaded_project_file_data = None  # Clear the loaded data
-
-        if loaded_data:
-            try:
-                # Decode and parse the JSON data
-                project_content = json.loads(loaded_data.decode("utf-8"))
-
-                # --- Validate Project Structure ---
-                if not isinstance(project_content, dict) or "tracks" not in project_content or "version" not in project_content:
-                    raise ValueError("Invalid project file structure. Missing 'version' or 'tracks'.")
-
-                # Optional: Check version compatibility
-                loaded_version = project_content.get("version", "0.0")
-                if loaded_version != PROJECT_FILE_VERSION:
-                    logger.warning(f"Loading project version {loaded_version}, current app version is {PROJECT_FILE_VERSION}. Compatibility not guaranteed.")
-                    st.warning(f"Loading project from older version ({loaded_version}). Some settings might be lost or default.")
-
-                loaded_tracks_data = project_content.get("tracks", {})
-                if not isinstance(loaded_tracks_data, dict):
-                    raise ValueError("Invalid 'tracks' data in project file.")
-
-                logger.info(f"Valid project structure found (Version: {loaded_version}). Clearing current state and loading {len(loaded_tracks_data)} tracks.")
-
-                # Clear existing tracks before loading
-                app_state.clear_all_tracks()
-
-                # --- Reconstruct Tracks ---
-                with st.spinner("Reconstructing project tracks..."):
-                    tracks_needing_upload = []
-                    for old_track_id, track_data in loaded_tracks_data.items():
-                        if not isinstance(track_data, dict):
-                            logger.warning(f"Skipping invalid track data entry (not a dict) for old ID {old_track_id}.")
-                            continue
-
-                        logger.debug(f"Loading track '{track_data.get('name', 'N/A')}' (Old ID: {old_track_id})")
-                        source_type = track_data.get("source_type", "unknown")
-                        track_type = track_data.get("track_type", TRACK_TYPE_OTHER)
-                        reconstructed_audio: AudioData | None = None  # Use imported type hint
-
-                        # --- Regenerate Audio Based on Source Type ---
-                        try:
-                            if source_type == "tts" and "tts_text" in track_data:
-                                logger.info(f"Regenerating TTS for track '{track_data.get('name')}'")
-                                reconstructed_audio, _ = tts_generator.generate(track_data["tts_text"])  # Use passed tts_generator
-                            elif source_type == "noise" and "gen_noise_type" in track_data:
-                                noise_type = track_data["gen_noise_type"]
-                                duration = track_data.get("gen_duration", 60)
-                                volume = track_data.get("gen_volume", 0.5)
-                                logger.info(f"Regenerating {noise_type} ({duration}s, vol={volume}) for track '{track_data.get('name')}'")
-                                # Use function from audio_generators (imported top-level)
-                                reconstructed_audio = generate_noise(noise_type, duration, GLOBAL_SR, volume)
-                            elif source_type == "binaural" and "gen_freq_left" in track_data:
-                                duration = track_data.get("gen_duration", 60)
-                                f_left = track_data["gen_freq_left"]
-                                f_right = track_data.get("gen_freq_right", f_left + 10.0)  # Default beat
-                                volume = track_data.get("gen_volume", 0.3)
-                                logger.info(f"Regenerating Binaural ({duration}s, L={f_left}, R={f_right}, vol={volume}) for track '{track_data.get('name')}'")
-                                # Use function from audio_generators (imported top-level)
-                                reconstructed_audio = generate_binaural_beats(duration, f_left, f_right, GLOBAL_SR, volume)
-                            elif source_type == "solfeggio" and "gen_freq" in track_data:
-                                duration = track_data.get("gen_duration", 60)
-                                freq = track_data["gen_freq"]
-                                volume = track_data.get("gen_volume", 0.3)
-                                logger.info(f"Regenerating Solfeggio ({duration}s, F={freq}, vol={volume}) for track '{track_data.get('name')}'")
-                                # Use function from audio_generators (imported top-level)
-                                reconstructed_audio = generate_solfeggio_frequency(duration, freq, GLOBAL_SR, volume)
-                            elif source_type == "isochronic" and "gen_carrier_freq" in track_data:
-                                duration = track_data.get("gen_duration", 60)
-                                carrier = track_data["gen_carrier_freq"]
-                                pulse = track_data.get("gen_pulse_freq", 10.0)  # Default pulse
-                                volume = track_data.get("gen_volume", 0.4)
-                                logger.info(f"Regenerating Isochronic ({duration}s, C={carrier}, P={pulse}, vol={volume}) for track '{track_data.get('name')}'")
-                                # Use function from audio_generators (imported top-level)
-                                reconstructed_audio = generate_isochronic_tones(duration, carrier, pulse, GLOBAL_SR, volume)
-                            elif source_type == "upload":
-                                filename = track_data.get("original_filename", "Unknown File")
-                                logger.warning(f"Track '{track_data.get('name')}' is an upload ('{filename}'). Audio data needs re-upload.")
-                                tracks_needing_upload.append(filename)
-                                reconstructed_audio = None
-                            else:
-                                logger.warning(f"Unknown or missing source_type ('{source_type}') for track '{track_data.get('name')}'. Cannot reconstruct audio.")
-                                reconstructed_audio = None
-
-                        except Exception as e_gen:
-                            logger.error(f"Error regenerating audio for track '{track_data.get('name')}': {e_gen}")
-                            st.warning(f"Could not regenerate audio for track '{track_data.get('name')}'.")
-                            reconstructed_audio = None
-
-                        # --- Add Track to State ---
-                        track_data["original_audio"] = reconstructed_audio
-                        track_data["sr"] = GLOBAL_SR
-                        # Ensure all default keys exist
-                        # get_default_track_params imported top-level
-                        final_track_data_for_load = get_default_track_params()
-                        final_track_data_for_load.update(track_data)
-
-                        try:
-                            # Use passed app_state instance
-                            app_state.add_track(final_track_data_for_load, track_type=track_type)
-                        except ValueError as e_add:
-                            logger.error(f"Failed to add loaded track '{track_data.get('name')}': {e_add}")
-                            st.error(f"Failed to load track '{track_data.get('name')}'.")
-
-                st.success("Project loaded successfully!")
-                if tracks_needing_upload:
-                    st.warning(f"Please re-upload the following audio file(s): {', '.join(tracks_needing_upload)}")
-
-            except json.JSONDecodeError:
-                logger.error("Failed to decode project file. Invalid JSON.")
-                st.error("Failed to load project: Invalid project file format (not valid JSON).")
-            except ValueError as e_val:
-                logger.error(f"Invalid project file content: {e_val}")
-                st.error(f"Failed to load project: {e_val}")
-            except Exception as e:
-                logger.exception("An unexpected error occurred while loading the project.")
-                st.error(f"An error occurred while loading the project: {e}")
-        else:
-            logger.debug("No project load requested or no file data found.")
-
 
 # --- Main Application Logic ---
 
@@ -240,28 +40,30 @@ def main():
     logger.info("MindMorph Application starting/rerunning.")
     logger.info("=====================================================")
 
-    # --- Import Core Components inside main() ---
-    from app_state import AppState  # Moved Import
-
-    # from app_state import TrackData, TrackType # TrackData/Type only used as hints or in handle_project_load
-    from tts_generator import TTSGenerator  # Moved Import
-    from ui_manager import UIManager  # Moved Import
+    # --- Import Core Components and Handlers inside main() ---
+    from app_state import AppState
+    from project_handler import ProjectHandler  # Import new handler
+    from tts_generator import TTSGenerator
+    from ui_manager import UIManager
+    from welcome_handler import display_welcome_message  # Import new handler
 
     # --- Initialize Core Components ---
-    # Use imported classes
     app_state = AppState()
     tts_generator = TTSGenerator()
     ui_manager = UIManager(app_state, tts_generator)
+    project_handler = ProjectHandler(app_state, tts_generator)  # Instantiate handler
 
     # --- Handle Project Loading ---
-    # Pass the initialized instances to the handler function
-    handle_project_load(app_state, tts_generator)
+    project_handler.load_project()  # Call method from handler
 
     # --- Initial Welcome Message ---
-    show_welcome_message()
+    # display_welcome_message returns True if message was shown, False otherwise
+    welcome_active = display_welcome_message()
 
     # --- Main UI Rendering (only if welcome message dismissed) ---
-    if "welcome_message_shown" in st.session_state:
+    if not welcome_active:
+        st.title("🧠 MindMorph - Subliminal Audio Editor")  # Show title only after welcome
+
         # --- Mode Selector ---
         if "app_mode" not in st.session_state:
             st.session_state.app_mode = "Easy"
@@ -286,6 +88,7 @@ def main():
         if selected_mode != st.session_state.app_mode:
             logger.info(f"App mode changed from '{st.session_state.app_mode}' to '{selected_mode}'")
             st.session_state.app_mode = selected_mode
+            # Clear potentially mode-dependent cached data
             if "export_buffer" in st.session_state:
                 del st.session_state.export_buffer
             if "preview_audio_data" in st.session_state:
@@ -295,7 +98,6 @@ def main():
         st.markdown("---")
 
         # --- Render UI Sections using UIManager ---
-        # This single call now handles sidebar, track editor, master controls, etc.
         ui_manager.render_ui()
 
     else:

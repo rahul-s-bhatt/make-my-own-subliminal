@@ -36,6 +36,10 @@ except ImportError:
 # Get a logger for this module
 logger = logging.getLogger(__name__)
 
+# Define the new maximum file size in bytes (15 MB)
+MAX_UPLOAD_SIZE_MB = 15
+MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+
 
 class SidebarUploader:
     """Handles rendering file uploaders and related actions in the sidebar."""
@@ -58,7 +62,7 @@ class SidebarUploader:
     # --- Callback Functions for File Uploaders ---
 
     def _handle_audio_upload(self):
-        """Callback function to process uploaded audio files."""
+        """Callback function to process uploaded audio files, including size validation."""
         logger.debug(f"Callback triggered: _handle_audio_upload (key: {self.audio_uploader_key})")
         uploaded_files = st.session_state.get(self.audio_uploader_key)
 
@@ -78,7 +82,13 @@ class SidebarUploader:
         }
 
         for file in files_to_process:
-            logger.info(f"Processing uploaded file via callback: {file.name}")
+            logger.info(f"Processing uploaded file via callback: {file.name} (Size: {file.size} bytes)")
+
+            # --- File Size Validation ---
+            if file.size > MAX_UPLOAD_SIZE_BYTES:
+                logger.warning(f"Upload '{file.name}' rejected (callback): Size {file.size} bytes exceeds limit {MAX_UPLOAD_SIZE_BYTES} bytes.")
+                st.error(f"❌ File '{file.name}' ({file.size / (1024 * 1024):.1f} MB) exceeds the {MAX_UPLOAD_SIZE_MB} MB limit.")
+                continue  # Skip this file
 
             if file.name in current_track_filenames_with_audio:
                 logger.info(f"Skipping upload (callback): Track for '{file.name}' already exists.")
@@ -87,6 +97,7 @@ class SidebarUploader:
             existing_track_id = current_tracks_missing_audio.get(file.name)
 
             try:
+                # Load audio only after passing size check
                 audio, sr = load_audio(file, target_sr=GLOBAL_SR)
             except Exception as e:
                 logger.error(f"Error loading audio file {file.name} in callback: {e}")
@@ -135,15 +146,16 @@ class SidebarUploader:
     def render_uploader(self):
         """Renders the audio file uploader component in the sidebar."""
         st.subheader("📁 Upload Audio File(s)")
-        st.caption(f"Upload music, voice, etc. (Max duration: {MAX_AUDIO_DURATION_S // 60} min)")
+        # Updated caption to reflect new limits
+        st.caption(f"Upload music, voice, etc. (Max duration: {MAX_AUDIO_DURATION_S // 60} min, Max size: {MAX_UPLOAD_SIZE_MB} MB)")
 
         st.file_uploader(
-            "Select audio files (.wav, .mp3, .ogg, .flac)",
-            type=["wav", "mp3", "ogg", "flac"],
+            "Select audio files (.wav, .mp3)",  # Updated label
+            type=["wav", "mp3"],  # Updated allowed types
             accept_multiple_files=True,
             key=self.audio_uploader_key,  # Use instance variable key
             label_visibility="collapsed",
-            help="Select one or more audio files to add as tracks.",
+            help=f"Select one or more WAV or MP3 files to add as tracks (Max {MAX_UPLOAD_SIZE_MB}MB each).",  # Updated help text
             on_change=self._handle_audio_upload,  # Assign the callback
         )
 

@@ -15,8 +15,8 @@ from PIL import Image
 from app_state import AppState, TrackData, TrackID, TrackType
 
 # --- Updated Audio Imports ---
-from audio_io import save_audio_to_temp_file  # Moved from audio_utils
-from audio_processing import AudioData, get_preview_audio  # Moved from audio_utils
+from audio_io import save_audio_to_temp_file
+from audio_processing import AudioData, get_preview_audio
 
 # --- End Updated Audio Imports ---
 from config import (
@@ -42,7 +42,11 @@ except ImportError:
         return None
 
     def audix(*args, **kwargs):
-        st.warning("Waveform preview requires 'streamlit-advanced-audio'. Please install it.")
+        # This dummy function won't be called if the library is missing,
+        # as the code checks STREAMLIT_ADVANCED_AUDIO_AVAILABLE first.
+        # If it were called, raising an error might be more explicit.
+        # However, the current logic relies on the boolean flag.
+        pass
 
 
 # Get a logger for this module
@@ -191,20 +195,32 @@ class TrackEditorManager:
                         self.app_state.update_track_param(track_id, "preview_temp_file_path", None)
                         self.app_state.update_track_param(track_id, "preview_settings_hash", None)
 
-                    if display_path and STREAMLIT_ADVANCED_AUDIO_AVAILABLE:
-                        ws_options = WaveSurferOptions(
-                            height=100, normalize=True, wave_color="#A020F0", progress_color="#800080", cursor_color="#333333", cursor_width=1, bar_width=2, bar_gap=1
-                        )
-                        update_count = track_data.get("update_counter", 0)
-                        audix_key = f"audix_preview_{track_id}_{update_count}"
-                        try:
-                            audix(data=display_path, sample_rate=track_sr, wavesurfer_options=ws_options, key=audix_key)
-                        except Exception as audix_err:
-                            logger.error(f"Error rendering audix waveform for {track_id}: {audix_err}")
-                            st.warning("Could not display waveform preview.")
-                    elif display_path:
-                        st.audio(display_path, format="audio/wav")
+                    # --- Display Logic ---
+                    if display_path:
+                        if STREAMLIT_ADVANCED_AUDIO_AVAILABLE:
+                            ws_options = WaveSurferOptions(
+                                height=100, normalize=True, wave_color="#A020F0", progress_color="#800080", cursor_color="#333333", cursor_width=1, bar_width=2, bar_gap=1
+                            )
+                            update_count = track_data.get("update_counter", 0)
+                            audix_key = f"audix_preview_{track_id}_{update_count}"
+                            try:
+                                # Attempt to render the waveform preview
+                                audix(data=display_path, sample_rate=track_sr, wavesurfer_options=ws_options, key=audix_key)
+                            except Exception as audix_err:
+                                # --- FALLBACK: Render st.audio if audix fails ---
+                                logger.error(f"Error rendering audix waveform for {track_id}: {audix_err}")
+                                st.warning("Waveform preview failed to render. Showing standard audio player instead.")
+                                try:
+                                    st.audio(display_path, format="audio/wav")
+                                except Exception as audio_err:
+                                    logger.error(f"Fallback st.audio player also failed for {track_id}: {audio_err}")
+                                    st.error("Could not display audio preview.")
+                                # --- End Fallback ---
+                        else:
+                            # If library not available, just show standard player
+                            st.audio(display_path, format="audio/wav")
                     elif not preview_cache_hit:
+                        # If no display path and cache miss, prompt user to update
                         st.info("Settings changed or preview not generated. Click 'Update Preview' below.")
 
                 else:  # No original audio data

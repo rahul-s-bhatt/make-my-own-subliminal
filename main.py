@@ -7,32 +7,35 @@
 import json
 import logging
 import os
-import uuid
+import uuid  # Keep top-level if needed elsewhere, otherwise could move
 
 import streamlit as st
 from PIL import Image
 
-# Core Components
-from app_state import AppState, TrackData, TrackType
+from audio_generators import generate_binaural_beats, generate_isochronic_tones, generate_noise, generate_solfeggio_frequency  # Keep for handle_project_load
 
-# --- Updated Audio Imports ---
-# Audio Generation Functions (needed for project loading)
-from audio_generators import generate_binaural_beats, generate_isochronic_tones, generate_noise, generate_solfeggio_frequency  # <-- Import from audio_generators now
-
+# --- Keep imports needed for global scope or functions called before main() ---
 # Type Hint (can be defined centrally or imported from where it makes sense)
 # Assuming AudioData is defined/used within audio_generators or audio_processing
-from audio_processing import AudioData  # Or from audio_generators if defined there
+from audio_processing import AudioData  # Keep if needed by handle_project_load
 
-# --- Local Imports ---
-# Configuration and Constants
-from config import FAVICON_PATH, GLOBAL_SR, PROJECT_FILE_VERSION, TRACK_TYPE_OTHER
-from tts_generator import TTSGenerator
-from ui_manager import UIManager
+# Configuration and Constants needed globally or in handle_project_load
+from config import (
+    FAVICON_PATH,
+    GLOBAL_SR,
+    PROJECT_FILE_VERSION,
+    TRACK_TYPE_OTHER,
+    get_default_track_params,  # Keep for handle_project_load
+)
 
 # Utility Functions
-from utils import setup_logging  # Import the setup function
+from utils import setup_logging  # Keep for initial setup
 
-# --- End Updated Audio Imports ---
+# --- Core Components - Moved inside main() ---
+# from app_state import AppState, TrackData, TrackType # MOVED
+# from tts_generator import TTSGenerator # MOVED
+# from ui_manager import UIManager # MOVED
+
 
 # --- Early Setup: Logging and Page Config ---
 # Configure logging as the first step
@@ -98,8 +101,9 @@ def show_welcome_message():
                     st.rerun()  # Rerun to hide the message immediately
 
 
-def handle_project_load(app_state: AppState, tts_generator: TTSGenerator):
+def handle_project_load(app_state, tts_generator):  # Pass instances instead of importing AppState/TTSGenerator here
     """Loads project data from session state if requested."""
+    # NOTE: app_state and tts_generator are now passed as arguments
     logger.info("Checking for project load request.")
     if st.session_state.get("project_load_requested", False):
         logger.info("Project load requested. Processing uploaded file data.")
@@ -150,13 +154,13 @@ def handle_project_load(app_state: AppState, tts_generator: TTSGenerator):
                         try:
                             if source_type == "tts" and "tts_text" in track_data:
                                 logger.info(f"Regenerating TTS for track '{track_data.get('name')}'")
-                                reconstructed_audio, _ = tts_generator.generate(track_data["tts_text"])
+                                reconstructed_audio, _ = tts_generator.generate(track_data["tts_text"])  # Use passed tts_generator
                             elif source_type == "noise" and "gen_noise_type" in track_data:
                                 noise_type = track_data["gen_noise_type"]
                                 duration = track_data.get("gen_duration", 60)
                                 volume = track_data.get("gen_volume", 0.5)
                                 logger.info(f"Regenerating {noise_type} ({duration}s, vol={volume}) for track '{track_data.get('name')}'")
-                                # Use function from audio_generators
+                                # Use function from audio_generators (imported top-level)
                                 reconstructed_audio = generate_noise(noise_type, duration, GLOBAL_SR, volume)
                             elif source_type == "binaural" and "gen_freq_left" in track_data:
                                 duration = track_data.get("gen_duration", 60)
@@ -164,14 +168,14 @@ def handle_project_load(app_state: AppState, tts_generator: TTSGenerator):
                                 f_right = track_data.get("gen_freq_right", f_left + 10.0)  # Default beat
                                 volume = track_data.get("gen_volume", 0.3)
                                 logger.info(f"Regenerating Binaural ({duration}s, L={f_left}, R={f_right}, vol={volume}) for track '{track_data.get('name')}'")
-                                # Use function from audio_generators
+                                # Use function from audio_generators (imported top-level)
                                 reconstructed_audio = generate_binaural_beats(duration, f_left, f_right, GLOBAL_SR, volume)
                             elif source_type == "solfeggio" and "gen_freq" in track_data:
                                 duration = track_data.get("gen_duration", 60)
                                 freq = track_data["gen_freq"]
                                 volume = track_data.get("gen_volume", 0.3)
                                 logger.info(f"Regenerating Solfeggio ({duration}s, F={freq}, vol={volume}) for track '{track_data.get('name')}'")
-                                # Use function from audio_generators
+                                # Use function from audio_generators (imported top-level)
                                 reconstructed_audio = generate_solfeggio_frequency(duration, freq, GLOBAL_SR, volume)
                             elif source_type == "isochronic" and "gen_carrier_freq" in track_data:
                                 duration = track_data.get("gen_duration", 60)
@@ -179,7 +183,7 @@ def handle_project_load(app_state: AppState, tts_generator: TTSGenerator):
                                 pulse = track_data.get("gen_pulse_freq", 10.0)  # Default pulse
                                 volume = track_data.get("gen_volume", 0.4)
                                 logger.info(f"Regenerating Isochronic ({duration}s, C={carrier}, P={pulse}, vol={volume}) for track '{track_data.get('name')}'")
-                                # Use function from audio_generators
+                                # Use function from audio_generators (imported top-level)
                                 reconstructed_audio = generate_isochronic_tones(duration, carrier, pulse, GLOBAL_SR, volume)
                             elif source_type == "upload":
                                 filename = track_data.get("original_filename", "Unknown File")
@@ -199,12 +203,12 @@ def handle_project_load(app_state: AppState, tts_generator: TTSGenerator):
                         track_data["original_audio"] = reconstructed_audio
                         track_data["sr"] = GLOBAL_SR
                         # Ensure all default keys exist
-                        from config import get_default_track_params  # Import locally if needed
-
+                        # get_default_track_params imported top-level
                         final_track_data_for_load = get_default_track_params()
                         final_track_data_for_load.update(track_data)
 
                         try:
+                            # Use passed app_state instance
                             app_state.add_track(final_track_data_for_load, track_type=track_type)
                         except ValueError as e_add:
                             logger.error(f"Failed to add loaded track '{track_data.get('name')}': {e_add}")
@@ -236,14 +240,21 @@ def main():
     logger.info("MindMorph Application starting/rerunning.")
     logger.info("=====================================================")
 
-    st.title("🧠 MindMorph - Subliminal Audio Editor")
+    # --- Import Core Components inside main() ---
+    from app_state import AppState  # Moved Import
+
+    # from app_state import TrackData, TrackType # TrackData/Type only used as hints or in handle_project_load
+    from tts_generator import TTSGenerator  # Moved Import
+    from ui_manager import UIManager  # Moved Import
 
     # --- Initialize Core Components ---
+    # Use imported classes
     app_state = AppState()
     tts_generator = TTSGenerator()
     ui_manager = UIManager(app_state, tts_generator)
 
     # --- Handle Project Loading ---
+    # Pass the initialized instances to the handler function
     handle_project_load(app_state, tts_generator)
 
     # --- Initial Welcome Message ---

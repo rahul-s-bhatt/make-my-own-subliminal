@@ -1,0 +1,28 @@
+├── main.py                 # Main app entry point (Router)
+├── app_state.py            # State management for Advanced Editor
+├── audio_generators.py     # Functions for generating audio (noise, frequencies)
+├── audio_io.py             # Functions for loading/saving audio files
+├── audio_processing.py     # Functions for mixing, effects (speed, pitch, etc.)
+├── config.py               # Configuration constants and default parameters
+├── project_handler.py      # Handles loading/saving projects (Advanced Editor)
+├── quick_wizard.py         # Orchestrator class for the Quick Create Wizard (Refactored)
+├── sidebar_manager.py      # Manages the sidebar UI (Advanced Editor)
+├── tts_generator.py        # Text-to-Speech generation logic
+├── ui_manager.py           # Manages the main UI layout (Advanced Editor)
+├── utils.py                # Utility functions (logging setup, etc.)
+├── welcome_handler.py      # Handles the welcome message (Advanced Editor)
+├── wizard_state.py         # Manages session state specifically for the wizard
+│
+└── wizard_steps/           # Directory for individual wizard step UI modules
+    ├── __init__.py         # Makes 'wizard_steps' a Python package
+    ├── step_1_affirmations.py # UI logic for Wizard Step 1
+    ├── step_2_background.py   # UI logic for Wizard Step 2
+    ├── step_3_frequency.py    # UI logic for Wizard Step 3
+    └── step_4_export.py       # UI logic for Wizard Step 4
+
+# Other potential files/folders (not explicitly modified but likely present)
+# ├── assets/
+# │   └── favicon.png
+# ├── requirements.txt
+# └── .streamlit/
+#     └── config.toml

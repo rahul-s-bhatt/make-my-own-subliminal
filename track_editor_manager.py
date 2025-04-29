@@ -39,47 +39,53 @@ class TrackEditorManager:
 
     # --- Main Rendering Method ---
 
-    def render_tracks_editor(self):
-        """Renders the main editor area, handling empty state and track iteration."""
+    def render_tracks_editor(self, mode: str = "Easy"):
+        """
+        Renders the main editor area, handling empty state and track iteration.
+
+        Args:
+            mode (str): The current editor mode ("Easy" or "Advanced").
+        """
         st.header("🎚️ Tracks Editor")
         tracks = self.app_state.get_all_tracks()
-        app_mode = st.session_state.get("app_mode", "Easy")
 
         # --- Handle Empty State ---
         if not tracks:
-            if "welcome_message_shown" in st.session_state:
-                col_icon, col_text = st.columns([1, 5])
-                with col_icon:
-                    st.markdown("<br/>", unsafe_allow_html=True)
-                    # Display icon or fallback
-                    if os.path.exists(FAVICON_PATH):
-                        try:
-                            st.image(Image.open(FAVICON_PATH), width=80)
-                        except Exception:
-                            st.markdown("🧠", unsafe_allow_html=True)
-                    else:
+            # <<< MODIFIED: Removed check for 'welcome_message_shown' >>>
+            # Always show this message if no tracks exist.
+            col_icon, col_text = st.columns([1, 5])
+            with col_icon:
+                st.markdown("<br/>", unsafe_allow_html=True)
+                # Display icon or fallback
+                if os.path.exists(FAVICON_PATH):
+                    try:
+                        st.image(Image.open(FAVICON_PATH), width=80)
+                    except Exception:
                         st.markdown("🧠", unsafe_allow_html=True)
-                with col_text:
-                    st.subheader("✨ Let's Create Your Subliminal!")
-                    st.markdown("Your project is empty. Use the **sidebar on the left** (👈) to add your first audio layer.")
-                    st.markdown("- **Upload** your own audio files (music, voice).")
-                    st.markdown("- Generate **Affirmations** from text or a file.")
-                    st.markdown("- Add background **Noise** (White, Pink, Brown).")
-                    if app_mode == "Easy":
-                        st.markdown("- Add **Frequency Presets** for focus, relaxation, etc.")
-                    else:
-                        st.markdown("- Add specific **Frequencies/Tones** or use Presets.")
-                st.markdown("---")
-                st.info("Once you add a track, its editor controls will appear here.")
+                else:
+                    st.markdown("🧠", unsafe_allow_html=True)
+            with col_text:
+                st.subheader("✨ Let's Create Your Subliminal!")
+                st.markdown("Your project is empty. Use the **sidebar on the left** (👈) to add your first audio layer.")
+                st.markdown("- **Upload** your own audio files (music, voice).")
+                st.markdown("- Generate **Affirmations** from text or a file.")
+                st.markdown("- Add background **Noise** (White, Pink, Brown).")
+                # Use the passed-in mode for conditional display
+                if mode == "Easy":
+                    st.markdown("- Add **Frequency Presets** for focus, relaxation, etc.")
+                else:  # Advanced mode
+                    st.markdown("- Add specific **Frequencies/Tones** or use Presets.")
+            st.markdown("---")
+            st.info("Once you add a track, its editor controls will appear here.")
             return  # Stop rendering if no tracks
 
         # --- Render Tracks ---
-        st.caption(f"Current Mode: **{app_mode}** | Tracks: {len(tracks)}")
+        st.caption(f"Current Mode: **{mode}** | Tracks: {len(tracks)}")
         st.markdown("Adjust settings for each track below. Click **'Update Preview'** inside a track's panel to refresh its 60s preview with the latest settings applied.")
         st.divider()
 
         track_ids_to_delete = []
-        logger.debug(f"Rendering editor for {len(tracks)} tracks.")
+        logger.debug(f"Rendering editor for {len(tracks)} tracks in {mode} mode.")
 
         track_ids = list(tracks.keys())  # Get keys before iterating
         for track_id in track_ids:
@@ -100,11 +106,13 @@ class TrackEditorManager:
             # Render track within an expander
             with st.expander(expander_label, expanded=True):
                 logger.debug(f"Rendering expander for: '{track_name}' ({track_id}), Type: {track_type_str}")
-                col_main, col_controls = st.columns([3, 1])
+                col_main, col_controls = st.columns([3, 1])  # Adjust ratios if needed
 
                 # Delegate rendering to sub-components
+                # Preview UI likely doesn't need the mode
                 self.preview_ui.render_preview_column(track_id, track_data, col_main)
-                deleted = self.metadata_ui.render_metadata_column(track_id, track_data, col_controls)
+                # Pass 'mode' to metadata_ui
+                deleted = self.metadata_ui.render_metadata_column(track_id, track_data, col_controls, mode=mode)
 
                 if deleted:
                     track_ids_to_delete.append(track_id)

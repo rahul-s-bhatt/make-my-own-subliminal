@@ -68,16 +68,24 @@ class UIManager:
 
     # --- Main Rendering Method ---
 
-    def render_ui(self):
-        """Renders the complete user interface."""
+    def render_ui(self, mode: str = "Easy"):  # Accept mode from main.py
+        """
+        Renders the complete user interface based on the selected mode.
+
+        Args:
+            mode (str): The current editor mode ("Easy" or "Advanced").
+        """
         # Render sidebar using SidebarManager
         self.sidebar_manager.render_sidebar()
 
         # Render main panel sections
         # Mode selector and title are handled in main.py before calling this
 
-        # Render track editor using TrackEditorManager
-        self.track_editor_manager.render_tracks_editor()
+        # --- REMOVED persistent markdown text for Tracks Editor ---
+
+        # Render track editor using TrackEditorManager, passing the mode
+        # TrackEditorManager handles the empty state message internally
+        self.track_editor_manager.render_tracks_editor(mode=mode)
 
         # Render master controls (managed by this class)
         self.render_master_controls()
@@ -97,9 +105,13 @@ class UIManager:
     def render_master_controls(self):
         """Renders the master output controls (Preview, Export, Filename)."""
         st.divider()
+
+        # --- REMOVED persistent markdown text for Master Output ---
+
         st.header("🔊 Master Output")
+        # --- RESTORED original caption ---
         st.caption("Preview the combined mix or export the final audio file.")
-        st.markdown("---")
+        st.markdown("---")  # Keep separator after header
 
         default_filename = "mindmorph_mix"
         export_filename_input = st.text_input(
@@ -269,7 +281,14 @@ class UIManager:
                         try:
                             logger.info("Converting full mix to MP3...")
                             audio_int16 = (np.clip(full_mix, -1.0, 1.0) * 32767).astype(np.int16)
-                            segment = AudioSegment(data=audio_int16.tobytes(), sample_width=audio_int16.dtype.itemsize, frame_rate=GLOBAL_SR, channels=2)
+                            # Determine channels correctly
+                            channels = 2 if full_mix.ndim > 1 and full_mix.shape[1] == 2 else 1
+                            segment = AudioSegment(data=audio_int16.tobytes(), sample_width=audio_int16.dtype.itemsize, frame_rate=GLOBAL_SR, channels=channels)
+                            # Convert mono to stereo if needed before export
+                            if channels == 1:
+                                segment = segment.set_channels(2)
+                                logger.info("Converted mono mix to stereo for MP3 export.")
+
                             mp3_buffer = BytesIO()
                             segment.export(mp3_buffer, format="mp3", bitrate="192k")
                             mp3_buffer.seek(0)

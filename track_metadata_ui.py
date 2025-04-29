@@ -28,7 +28,8 @@ class TrackMetadataUI:
         self.app_state = app_state
         logger.debug("TrackMetadataUI initialized.")
 
-    def render_metadata_column(self, track_id: TrackID, track_data: TrackData, column: st.delta_generator.DeltaGenerator) -> bool:
+    # <<< MODIFIED: Added 'mode' parameter >>>
+    def render_metadata_column(self, track_id: TrackID, track_data: TrackData, column: st.delta_generator.DeltaGenerator, mode: str = "Easy") -> bool:
         """
         Renders the side controls for a track (Name, Type, Mute, Solo, Delete).
 
@@ -36,6 +37,7 @@ class TrackMetadataUI:
             track_id: The ID of the track being rendered.
             track_data: The data dictionary for the track.
             column: The Streamlit column container to render into.
+            mode (str): The current editor mode ("Easy" or "Advanced").
 
         Returns:
             bool: True if the delete button was clicked, False otherwise.
@@ -60,6 +62,7 @@ class TrackMetadataUI:
                     self.app_state.update_track_param(track_id, "track_type", new_type)
                     st.rerun()  # Rerun to update expander label
 
+                # --- Basic Mixing Controls (Visible in both modes) ---
                 st.caption("Mixing Controls")
                 ms_col1, ms_col2 = st.columns(2)
                 with ms_col1:
@@ -75,6 +78,22 @@ class TrackMetadataUI:
                         self.app_state.update_track_param(track_id, "solo", solo)
                         # No rerun needed for mute/solo
 
+                # --- Advanced Controls Placeholder ---
+                # Add controls here that should ONLY appear in Advanced mode
+                if mode == "Advanced":
+                    st.markdown("---")
+                    st.caption("Advanced Controls")
+                    # Example: Add Panning slider
+                    # current_pan = track_data.get("pan", 0.0)
+                    # new_pan = st.slider("Pan (L/R)", -1.0, 1.0, current_pan, 0.05, key=f"pan_{track_id}")
+                    # if new_pan != current_pan:
+                    #     self.app_state.update_track_param(track_id, "pan", new_pan)
+
+                    # Example: Add other advanced controls like Pitch Shift, Ultrasonic etc.
+                    # if they belong in this component.
+                    st.info("Advanced controls (e.g., Pan) would appear here.")
+
+                # --- Delete Button (Visible in both modes) ---
                 st.markdown("---")
                 if st.button("🗑️ Delete Track", key=f"delete_{track_id}", help="Permanently remove track.", type="secondary", use_container_width=True):
                     delete_clicked = True

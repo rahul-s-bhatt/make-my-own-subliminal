@@ -7,6 +7,7 @@ import logging
 import logging.handlers
 import os
 import queue
+import sys  # Import sys for stdout access
 from typing import Optional
 
 # Need to import docx if read_text_file uses it
@@ -37,11 +38,12 @@ log_queue = queue.Queue(-1)
 
 
 def setup_logging():
-    """Configures the application's logging using a queue handler."""
+    """
+    Configures the application's logging using a queue handler.
+    Sends logs to both a rotating file and stdout (for Streamlit Cloud).
+    """
     # Prevent adding handlers multiple times if setup_logging is called again
-    # This can happen with Streamlit's rerun behavior
     root_logger = logging.getLogger()
-    # Check if a QueueHandler instance already exists
     if any(isinstance(h, logging.handlers.QueueHandler) for h in root_logger.handlers):
         logger.debug("Logging handlers already appear to be configured.")
         return
@@ -49,7 +51,10 @@ def setup_logging():
     logger.info(f"Setting up logging. Log file: {LOG_FILE}")
     log_formatter = logging.Formatter(LOG_FORMAT)
 
-    # File handler (rotates logs) - This will be used by the listener
+    # --- Handlers ---
+    # These handlers will be managed by the QueueListener in a separate thread.
+
+    # 1. File handler (rotates logs)
     try:
         file_handler = logging.handlers.RotatingFileHandler(LOG_FILE, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUP_COUNT, encoding="utf-8")
         file_handler.setFormatter(log_formatter)
@@ -59,7 +64,16 @@ def setup_logging():
         logger.error(f"Error setting up log file handler: {e}")
         return  # Stop setup if file handler fails
 
-    # Queue handler (sends logs from the main thread to the queue)
+    # 2. Stream handler (writes to stdout for Streamlit Cloud)
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(log_formatter)
+    # Set level for console output (e.g., INFO to reduce noise, or DEBUG to match file)
+    stream_handler.setLevel(logging.INFO)  # Set to INFO for less verbose cloud logs
+    # Or use logging.DEBUG to see everything:
+    # stream_handler.setLevel(logging.DEBUG)
+
+    # --- Queue Handler (for the main thread) ---
+    # This handler pushes logs to the queue, managed by the listener.
     queue_handler = logging.handlers.QueueHandler(log_queue)
     queue_handler.setLevel(logging.DEBUG)  # Send all logs to the queue
 
@@ -67,14 +81,21 @@ def setup_logging():
     root_logger.addHandler(queue_handler)
     root_logger.setLevel(logging.DEBUG)  # Set root logger level
 
+    # --- Queue Listener (runs in a background thread) ---
     # Start the queue listener thread (if not already started)
-    # Use session_state to track if the listener is running
+    # The listener pulls logs from the queue and sends them to *both* file and stream handlers.
     if "log_listener_started" not in st.session_state:
         try:
-            listener = logging.handlers.QueueListener(log_queue, file_handler, respect_handler_level=True)
+            # Pass both handlers to the listener
+            listener = logging.handlers.QueueListener(
+                log_queue,
+                file_handler,  # Handler 1
+                stream_handler,  # Handler 2
+                respect_handler_level=True,
+            )
             listener.start()
             st.session_state.log_listener_started = True
-            logger.info("Logging QueueListener started.")
+            logger.info("Logging QueueListener started with FileHandler and StreamHandler.")
         except Exception as e:
             st.error(f"Error starting log listener: {e}")
             logger.error(f"Error starting log listener: {e}")

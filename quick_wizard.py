@@ -6,7 +6,7 @@
 import logging
 import re
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Tuple  # Added List
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import streamlit as st
@@ -16,22 +16,22 @@ from audio_generators import (
     generate_binaural_beats,
     generate_isochronic_tones,
     generate_noise,
-    generate_solfeggio_frequency,  # Needed for export
+    generate_solfeggio_frequency,
 )
-from audio_io import load_audio, save_audio_to_bytesio  # Needed for export
-from audio_processing import mix_tracks  # Wizard will call the main mix function
+from audio_io import load_audio, save_audio_to_bytesio
+
+# <<< MODIFIED: Import mix_wizard_tracks instead of mix_tracks >>>
+from audio_processing import mix_wizard_tracks
 from config import (
     GLOBAL_SR,
     MAX_AFFIRMATION_CHARS,
     MAX_AUDIO_DURATION_S,
-    PROJECT_FILE_VERSION,
-    TRACK_TYPE_AFFIRMATION,
-    TRACK_TYPE_BACKGROUND,
-    TRACK_TYPE_FREQUENCY,
-    get_default_track_params,  # Needed for export
+    PROJECT_FILE_VERSION,  # Keep for potential future use
+    # TRACK_TYPE constants not needed here anymore
+    # get_default_track_params, # Not needed here anymore
 )
 from tts_generator import TTSGenerator
-from utils import read_text_file  # Keep if needed, maybe not directly here
+from utils import read_text_file
 
 # Import wizard state management
 from wizard_state import initialize_wizard_state, reset_wizard_state
@@ -50,10 +50,9 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# --- Constants for Wizard (can be moved to a wizard_config.py) ---
-WIZARD_AFFIRMATION_SPEED = 10.0  # Fixed speed for affirmations
-WIZARD_AFFIRMATION_VOLUME = 0.10  # Fixed (low) volume for affirmations
-# Other constants like WIZARD_MAX_UPLOAD_SIZE_MB are now in step modules where used
+# --- Constants for Wizard ---
+WIZARD_AFFIRMATION_SPEED = 10.0
+WIZARD_AFFIRMATION_VOLUME = 0.10
 
 
 class QuickWizard:
@@ -67,56 +66,43 @@ class QuickWizard:
             tts_generator: An instance of the TTSGenerator.
         """
         self.tts_generator = tts_generator
-        # Initialize state using the dedicated function
         initialize_wizard_state()
         logger.debug("QuickWizard initialized and state ensured.")
 
     # --- State Synchronization Callbacks (used by step renderers) ---
-
+    # (Keep existing callbacks: sync_affirmation_text, clear_affirmation_upload_state, etc.)
     def sync_affirmation_text(self):
-        """Callback to update affirmation text state from text_area."""
         st.session_state.wizard_affirmation_text = st.session_state.get("wizard_affirm_text_area", "")
-        # If text is updated, clear any previously generated/uploaded audio for text source
         if st.session_state.get("wizard_affirmation_source") == "text":
             st.session_state.wizard_affirmation_audio = None
             st.session_state.wizard_affirmation_sr = None
-            # Keep source as 'text' but require regeneration
         logger.debug("Synced affirmation text state.")
 
     def clear_affirmation_upload_state(self):
-        """Callback to clear affirmation audio state when file uploader changes."""
-        # This is called when a file is uploaded OR removed.
-        # We only clear if the source was 'upload'. If it was 'text', keep the generated audio.
         if st.session_state.get("wizard_affirmation_source") == "upload":
             st.session_state.wizard_affirmation_audio = None
             st.session_state.wizard_affirmation_sr = None
-            st.session_state.wizard_affirmation_source = None  # Reset source
-            st.session_state.wizard_affirmation_text = ""  # Clear text reference
+            st.session_state.wizard_affirmation_source = None
+            st.session_state.wizard_affirmation_text = ""
             logger.debug("Cleared affirmation upload state due to file uploader change.")
 
     def sync_background_choice(self, choice_options: List[str]):
-        """Callback to update background choice and clear audio if needed."""
         selected_label = st.session_state.get("wizard_bg_choice_radio")
         if not selected_label:
-            return  # Should not happen
-
-        new_choice = "none"  # Default
+            return
+        new_choice = "none"
         if selected_label == "Upload Music/Sound":
             new_choice = "upload"
         elif selected_label == "Generate Noise":
             new_choice = "noise"
-
-        # If the choice actually changed, clear the audio/sr
         if new_choice != st.session_state.get("wizard_background_choice"):
             st.session_state.wizard_background_audio = None
             st.session_state.wizard_background_sr = None
             logger.debug(f"Background choice changed to {new_choice}, cleared audio.")
-
         st.session_state.wizard_background_choice = new_choice
-        st.session_state.wizard_background_choice_label = selected_label  # Store label for radio index
+        st.session_state.wizard_background_choice_label = selected_label
 
     def clear_background_upload_state(self):
-        """Callback to clear background audio state when file uploader changes."""
         if st.session_state.get("wizard_background_choice") == "upload":
             st.session_state.wizard_background_audio = None
             st.session_state.wizard_background_sr = None
@@ -127,13 +113,12 @@ class QuickWizard:
     def _reset_wizard_state(self):
         """Resets the wizard state using the dedicated function."""
         reset_wizard_state()
-        # No need to call initialize here, reset does it.
-        # Rerun to go back to the home screen (handled by main.py checking selected_workflow)
+        # Rerun handled by main.py checking selected_workflow
         st.rerun()
 
     def _go_to_step(self, step: int):
         """Updates the wizard step in session state and reruns."""
-        if 1 <= step <= 4:  # Basic validation
+        if 1 <= step <= 4:
             st.session_state.wizard_step = step
             logger.debug(f"Navigating to wizard step {step}")
             st.rerun()
@@ -142,130 +127,83 @@ class QuickWizard:
 
     # --- Core Processing Logic ---
 
+    # <<< MODIFIED: Use mix_wizard_tracks >>>
     def _process_and_export(self):
         """Handles the final processing and export logic for the wizard."""
         logger.info("Starting wizard export process.")
-        st.session_state.wizard_export_buffer = None  # Clear previous buffer/error
+        st.session_state.wizard_export_buffer = None
         st.session_state.wizard_export_error = None
 
-        # --- Gather Audio Data from Session State ---
-        affirmation_audio = st.session_state.get("wizard_affirmation_audio")
+        # --- Gather Audio Data and Parameters from Session State ---
+        affirmation_audio_data = st.session_state.get("wizard_affirmation_audio")
         affirmation_sr = st.session_state.get("wizard_affirmation_sr")
-        background_audio = st.session_state.get("wizard_background_audio")
+        background_audio_data = st.session_state.get("wizard_background_audio")
         background_sr = st.session_state.get("wizard_background_sr")
-        background_volume = st.session_state.get("wizard_background_volume", 0.7)
-        frequency_audio = st.session_state.get("wizard_frequency_audio")
+        background_volume = st.session_state.get("wizard_background_volume", 0.7)  # Default volume
+        frequency_audio_data = st.session_state.get("wizard_frequency_audio")
         frequency_sr = st.session_state.get("wizard_frequency_sr")
-        frequency_volume = st.session_state.get("wizard_frequency_volume", 0.2)
+        frequency_volume = st.session_state.get("wizard_frequency_volume", 0.2)  # Default volume
         export_format = st.session_state.get("wizard_export_format", "wav").lower()
 
-        if affirmation_audio is None or affirmation_sr is None:
+        # Prepare tuples for the mixing function
+        affirmation_tuple = (affirmation_audio_data, affirmation_sr) if affirmation_audio_data is not None and affirmation_sr is not None else None
+        background_tuple = (background_audio_data, background_sr) if background_audio_data is not None and background_sr is not None else None
+        frequency_tuple = (frequency_audio_data, frequency_sr) if frequency_audio_data is not None and frequency_sr is not None else None
+
+        if affirmation_tuple is None:
             st.session_state.wizard_export_error = "Affirmation audio is missing. Cannot export."
             logger.error("Wizard export failed: Missing affirmation audio.")
             return
 
-        # --- Construct Tracks Dictionary for Mixing ---
-        tracks_dict = {}
-        track_id_counter = 0
-
-        # 1. Affirmation Track (with fixed processing)
-        affirm_params = get_default_track_params()
-        affirm_params.update(
-            {
-                "original_audio": affirmation_audio,
-                "sr": affirmation_sr,
-                "name": "Wizard Affirmations",
-                "track_type": TRACK_TYPE_AFFIRMATION,
-                "volume": WIZARD_AFFIRMATION_VOLUME,  # Fixed low volume
-                "speed_factor": WIZARD_AFFIRMATION_SPEED,  # Fixed high speed
-                "pitch_shift": 0.0,  # Ensure no pitch shift
-                "ultrasonic_shift": False,
-                "loop_to_fit": True,  # Always loop affirmations
-            }
-        )
-        tracks_dict[f"wizard_track_{track_id_counter}"] = affirm_params
-        track_id_counter += 1
-        logger.debug("Added affirmation track to mix dict.")
-
-        # 2. Background Track (Optional)
-        if background_audio is not None and background_sr is not None:
-            bg_params = get_default_track_params()
-            bg_params.update(
-                {
-                    "original_audio": background_audio,
-                    "sr": background_sr,
-                    "name": "Wizard Background",
-                    "track_type": TRACK_TYPE_BACKGROUND,
-                    "volume": background_volume,  # User chosen volume
-                    "loop_to_fit": True,  # Always loop background
-                }
-            )
-            tracks_dict[f"wizard_track_{track_id_counter}"] = bg_params
-            track_id_counter += 1
-            logger.debug("Added background track to mix dict.")
-
-        # 3. Frequency Track (Optional)
-        if frequency_audio is not None and frequency_sr is not None:
-            freq_params = get_default_track_params()
-            freq_params.update(
-                {
-                    "original_audio": frequency_audio,
-                    "sr": frequency_sr,
-                    "name": "Wizard Frequency",
-                    "track_type": TRACK_TYPE_FREQUENCY,
-                    "volume": frequency_volume,  # User chosen volume
-                    "loop_to_fit": True,  # Always loop frequency
-                }
-            )
-            tracks_dict[f"wizard_track_{track_id_counter}"] = freq_params
-            track_id_counter += 1
-            logger.debug("Added frequency track to mix dict.")
-
-        # --- Mix Tracks ---
-        logger.info(f"Wizard mixing {len(tracks_dict)} tracks.")
+        # --- Mix Tracks using the dedicated wizard function ---
+        logger.info("Wizard mixing tracks...")
         spinner_msg = f"Generating final mix ({export_format.upper()}). This may take a moment..."
         with st.spinner(spinner_msg):
             try:
-                # Ensure mix_tracks is robust and handles potential errors
-                full_mix, final_mix_len_samples = mix_tracks(
-                    tracks_dict,
-                    preview=False,  # Generate full mix
+                # Call the new function
+                full_mix = mix_wizard_tracks(
+                    affirmation_audio=affirmation_tuple,
+                    background_audio=background_tuple,
+                    frequency_audio=frequency_tuple,
+                    affirmation_speed=WIZARD_AFFIRMATION_SPEED,
+                    affirmation_volume=WIZARD_AFFIRMATION_VOLUME,
+                    background_volume=background_volume,
+                    frequency_volume=frequency_volume,
                     target_sr=GLOBAL_SR,
                 )
 
                 if full_mix is None or full_mix.size == 0:
-                    raise ValueError("Mixing process resulted in empty audio.")
+                    raise ValueError("Mixing process resulted in empty or None audio.")
 
-                logger.info(f"Mixing successful. Final mix length: {final_mix_len_samples / GLOBAL_SR:.2f} seconds.")
+                mix_duration_s = len(full_mix) / GLOBAL_SR if GLOBAL_SR > 0 else 0
+                logger.info(f"Mixing successful. Final mix length: {mix_duration_s:.2f} seconds.")
 
                 # --- Save to Buffer ---
                 if export_format == "wav":
                     export_buffer = save_audio_to_bytesio(full_mix, GLOBAL_SR)
-                    if export_buffer:
+                    if export_buffer and export_buffer.getbuffer().nbytes > 0:
                         st.session_state.wizard_export_buffer = export_buffer
                         logger.info("Wizard WAV mix generated and stored in buffer.")
                     else:
-                        raise ValueError("Failed to save WAV mix to buffer.")
+                        raise ValueError("Failed to save WAV mix to buffer (empty buffer).")
                 elif export_format == "mp3" and PYDUB_AVAILABLE:
                     try:
                         logger.info("Wizard converting full mix to MP3...")
-                        # Ensure audio is in correct range [-1, 1] before scaling
-                        full_mix = np.clip(full_mix, -1.0, 1.0)
-                        audio_int16 = (full_mix * 32767).astype(np.int16)
-                        # Ensure stereo if not already (pydub might handle mono, but explicit is safer)
+                        full_mix_clipped = np.clip(full_mix, -1.0, 1.0)
+                        audio_int16 = (full_mix_clipped * 32767).astype(np.int16)
                         channels = 2 if audio_int16.ndim > 1 and audio_int16.shape[1] == 2 else 1
-
                         segment = AudioSegment(data=audio_int16.tobytes(), sample_width=audio_int16.dtype.itemsize, frame_rate=GLOBAL_SR, channels=channels)
-                        # If mono, convert to stereo for wider compatibility
                         if channels == 1:
                             segment = segment.set_channels(2)
                             logger.info("Converted mono mix to stereo for MP3 export.")
-
                         mp3_buffer = BytesIO()
-                        segment.export(mp3_buffer, format="mp3", bitrate="192k")  # Consider making bitrate configurable?
+                        segment.export(mp3_buffer, format="mp3", bitrate="192k")
                         mp3_buffer.seek(0)
-                        st.session_state.wizard_export_buffer = mp3_buffer
-                        logger.info("Wizard MP3 mix generated and stored in buffer.")
+                        if mp3_buffer.getbuffer().nbytes > 0:
+                            st.session_state.wizard_export_buffer = mp3_buffer
+                            logger.info("Wizard MP3 mix generated and stored in buffer.")
+                        else:
+                            raise ValueError("MP3 export resulted in an empty buffer.")
                     except Exception as e_mp3:
                         logger.exception("Wizard failed to export mix as MP3 using pydub.")
                         st.session_state.wizard_export_error = f"MP3 Export Failed: {e_mp3}. Ensure ffmpeg is installed and accessible in system PATH."
@@ -285,20 +223,15 @@ class QuickWizard:
     def render_wizard(self):
         """Renders the current step of the wizard by calling the appropriate step function."""
         st.title("✨ MindMorph Quick Create Wizard")
-
-        # Ensure state is initialized (might be redundant if __init__ always runs, but safe)
         initialize_wizard_state()
-
         step = st.session_state.get("wizard_step", 1)
 
-        # Simple progress indicator
         steps_display = ["Affirmations", "Background", "Frequency", "Export"]
-        # Ensure step is within valid range for progress calculation
         progress_step = max(1, min(step, len(steps_display)))
         try:
             st.progress((progress_step) / len(steps_display), text=f"Step {progress_step}: {steps_display[progress_step - 1]}")
         except IndexError:
-            st.progress(0.0)  # Should not happen with validation
+            st.progress(0.0)
             logger.warning(f"Progress bar step index out of range: {progress_step}")
 
         # Call the appropriate rendering function, passing self
@@ -313,4 +246,4 @@ class QuickWizard:
         else:
             st.error("Invalid wizard step detected. Resetting.")
             logger.error(f"Invalid wizard step in render_wizard: {step}. Resetting state.")
-            self._reset_wizard_state()  # This will trigger a rerun
+            self._reset_wizard_state()

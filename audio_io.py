@@ -12,7 +12,8 @@ from typing import Any, Dict, Optional, Tuple
 import librosa
 import numpy as np
 import soundfile as sf
-import streamlit as st  # TODO: Remove Streamlit UI calls from this module
+
+# import streamlit as st # Avoid direct Streamlit UI calls in this module
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 # Import constants from config
@@ -31,25 +32,31 @@ logger = logging.getLogger(__name__)
 # ==========================================
 
 
-def load_audio(file_source: UploadedFile | BytesIO | str, target_sr: SampleRate = GLOBAL_SR) -> tuple[AudioData, SampleRate]:
+# <<< MODIFIED: Added duration parameter and updated return type hint >>>
+def load_audio(
+    file_source: UploadedFile | BytesIO | str, target_sr: Optional[SampleRate] = GLOBAL_SR, duration: Optional[float] = None
+) -> tuple[Optional[AudioData], Optional[SampleRate]]:
     """
-    Loads audio from various sources, ensures stereo, and resamples to target SR.
+    Loads audio from various sources, ensures stereo, resamples, and optionally limits duration.
 
     Args:
         file_source: An UploadedFile object, BytesIO buffer, or file path string.
-        target_sr: The desired sample rate for the output audio.
+        target_sr: The desired sample rate for the output audio. If None, original SR is kept.
+        duration: Optional maximum duration in seconds to load from the beginning.
+                  If None, loads the entire file.
 
     Returns:
         A tuple containing:
-            - The loaded audio data as a NumPy array (float32, stereo).
-            - The sample rate of the loaded audio (will be target_sr).
-        Returns empty array and target_sr on failure.
+            - The loaded audio data as a NumPy array (float32, stereo), or None on failure.
+            - The sample rate of the loaded audio (target_sr if resampling occurred,
+              original SR otherwise), or None on failure.
     """
-    logger.info(f"Loading audio from source type: {type(file_source)}")
+    logger.info(f"Loading audio from source type: {type(file_source)}, Target SR: {target_sr}, Duration: {duration}s")
     try:
         # Load audio using librosa
         # sr=None preserves original sample rate, mono=False loads all channels
-        audio, sr = librosa.load(file_source, sr=None, mono=False)
+        # <<< MODIFIED: Pass duration to librosa.load >>>
+        audio, sr = librosa.load(file_source, sr=None, mono=False, duration=duration)
         logger.debug(f"Loaded audio original SR: {sr}, shape: {audio.shape}")
 
         # --- Ensure Stereo Format ---
@@ -57,46 +64,60 @@ def load_audio(file_source: UploadedFile | BytesIO | str, target_sr: SampleRate 
         # We want (samples, channels)
         if audio.ndim == 1:
             # Convert mono to stereo by duplicating the channel
-            logger.warning("Mono audio detected. Duplicating channel to create stereo.")
+            logger.info("Mono audio detected. Duplicating channel to create stereo.")
             audio = np.stack([audio, audio], axis=-1)  # Now (samples, 2)
         elif audio.shape[0] == 2 and audio.shape[1] > 2:
             # If shape is (2, samples), transpose to (samples, 2)
             audio = audio.T
-        elif audio.shape[1] > 2:
-            # If more than 2 channels, take only the first two
+        elif audio.ndim > 1 and audio.shape[0] > 2:  # Check if first dimension is channels > 2
+            logger.warning(f"Audio has more than 2 channels ({audio.shape[0]}). Using only the first two.")
+            audio = audio[:2, :].T  # Take first 2 channels and transpose
+        elif audio.ndim > 1 and audio.shape[1] > 2:  # Check if second dimension is channels > 2 (already transposed?)
             logger.warning(f"Audio has more than 2 channels ({audio.shape[1]}). Using only the first two.")
-            audio = audio[:, :2]
-        elif audio.shape[1] == 1:
+            audio = audio[:, :2]  # Take first 2 channels
+        elif audio.ndim > 1 and audio.shape[1] == 1:
             # If shape is (samples, 1), duplicate channel
-            logger.warning("Audio has 1 channel dimension. Duplicating.")
+            logger.info("Audio has 1 channel dimension. Duplicating.")
             audio = np.concatenate([audio, audio], axis=1)  # Now (samples, 2)
+        # Add check for already correct shape (samples, 2)
+        elif audio.ndim == 2 and audio.shape[1] == 2:
+            logger.debug("Audio is already in desired stereo format (samples, 2).")
+        else:
+            logger.warning(f"Unexpected audio shape {audio.shape}. Attempting to proceed, but might cause issues.")
 
-        # --- Resample if Necessary ---
-        if sr != target_sr:
+        # --- Resample if Necessary and target_sr is specified ---
+        output_sr = sr  # Start with original SR
+        if target_sr is not None and sr != target_sr:
             logger.info(f"Resampling audio from {sr} Hz to {target_sr} Hz.")
             if audio.size > 0:
                 # Ensure audio is float before resampling
                 # Librosa expects (channels, samples) for resample, so transpose
                 audio_float = audio.astype(np.float32)
+                # Handle potential shape issues before transposing
+                if audio_float.ndim == 1:  # Should have been converted to stereo already, but double-check
+                    audio_float = np.stack([audio_float, audio_float], axis=-1)
+
+                if audio_float.shape[1] != 2:  # If still not (samples, 2) after checks
+                    logger.error(f"Cannot resample, unexpected audio shape after stereo conversion: {audio_float.shape}")
+                    return None, None  # Indicate failure
+
                 audio_resampled = librosa.resample(audio_float.T, orig_sr=sr, target_sr=target_sr)
                 # Transpose back to (samples, channels)
                 audio = audio_resampled.T
+                output_sr = target_sr  # Update the output SR
             else:
-                # If audio is empty, just update the sample rate info
-                # sr = target_sr # No need to update sr, it's the original rate
                 logger.warning("Audio data is empty, cannot resample. Original SR was {sr}Hz.")
-                # Return empty array but keep target_sr as the intended rate
-                return np.zeros((0, 2), dtype=np.float32), target_sr
+                output_sr = target_sr  # Return target SR even if empty
 
         # Ensure final output is float32
-        return audio.astype(np.float32), target_sr
+        return audio.astype(np.float32), output_sr
 
     except Exception as e:
         logger.exception(f"Error loading audio from source: {type(file_source)}")
-        # TODO: Remove direct Streamlit call. Raise exception or return error status.
-        st.error(f"Error loading audio file: {e}")
-        # Return an empty stereo array and the target sample rate on error
-        return np.zeros((0, 2), dtype=np.float32), target_sr
+        # Removed direct Streamlit call. Log the error.
+        # st.error(f"Error loading audio file: {e}")
+        # Return None, None on error to match signature
+        return None, None
 
 
 def save_audio_to_bytesio(audio: AudioData, sr: SampleRate) -> BytesIO:
@@ -129,8 +150,8 @@ def save_audio_to_bytesio(audio: AudioData, sr: SampleRate) -> BytesIO:
 
     except Exception as e:
         logger.exception("Error saving audio to BytesIO buffer.")
-        # TODO: Remove direct Streamlit call. Raise exception or return error status.
-        st.error(f"Error saving audio: {e}")
+        # Removed direct Streamlit call. Log the error.
+        # st.error(f"Error saving audio: {e}")
         # Return an empty buffer in case of error
         buffer = BytesIO()
 
@@ -170,8 +191,8 @@ def save_audio_to_temp_file(audio: AudioData, sr: SampleRate) -> str | None:
 
     except Exception as e:
         logger.exception("Failed to save audio to temporary file.")
-        # TODO: Remove direct Streamlit call. Raise exception or return error status.
-        st.error(f"Failed to save temporary audio file: {e}")
+        # Removed direct Streamlit call. Log the error.
+        # st.error(f"Failed to save temporary audio file: {e}")
         # Clean up if file was partially created
         if temp_file_path and os.path.exists(temp_file_path):
             try:

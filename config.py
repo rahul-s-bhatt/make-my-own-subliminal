@@ -21,6 +21,8 @@ ULTRASONIC_FILTER_ORDER: int = 8  # Steep filter order
 PREVIEW_DURATION_S: int = 60  # Default duration for track previews in editor (seconds)
 MIX_PREVIEW_DURATION_S: int = 10  # Duration for the master mix preview (seconds)
 MIX_PREVIEW_PROCESSING_BUFFER_S: int = 5  # Extra seconds to process for preview to handle speed changes
+TRACK_SNIPPET_DURATION_S: int = 30  # Duration (in seconds) of audio loaded into memory for editing/preview (Uploads/TTS)
+GENERATOR_SNIPPET_DURATION_S: int = 10  # Duration (in seconds) for generated noise/frequency snippets
 
 # --- TTS ---
 TTS_CHUNK_SIZE: int = 1500  # Max characters per chunk for TTS generation
@@ -28,6 +30,8 @@ TTS_CHUNK_SIZE: int = 1500  # Max characters per chunk for TTS generation
 # --- Resource Limits ---
 MAX_AUDIO_DURATION_S: int = 300  # 5 minutes max for uploaded/generated audio
 MAX_AFFIRMATION_CHARS: int = 5000  # Max characters for TTS input
+# <<< ADDED: Maximum number of tracks allowed >>>
+MAX_TRACK_LIMIT: int = 5  # Maximum number of tracks allowed in the Advanced Editor
 
 # --- Track Types ---
 # Define constants for track types for consistency
@@ -51,38 +55,29 @@ TRACK_TYPES: list[str] = [
 # Used when creating a new track or loading projects to ensure all keys exist
 def get_default_track_params() -> Dict[str, Any]:
     """Returns a dictionary with default parameters for an audio track."""
+    # NOTE: This structure is defined by TrackDataDict in app_state.py now
+    # This function might become obsolete or just return an empty dict,
+    # as defaults are handled during track creation in AppState.add_track
     return {
-        "original_audio": np.zeros((0, 2), dtype=np.float32),  # Placeholder for audio data
-        "sr": GLOBAL_SR,  # Sample rate
-        "name": "New Track",  # Default track name
-        "track_type": TRACK_TYPE_OTHER,  # Default track category
-        "volume": 1.0,  # Volume multiplier (0.0 to 2.0)
-        "mute": False,  # Muted state in the mix
-        "solo": False,  # Soloed state in the mix
-        "speed_factor": 1.0,  # Playback speed multiplier
-        "pitch_shift": 0,  # Pitch shift in semitones
-        "pan": 0.0,  # Stereo panning (-1.0 Left to 1.0 Right)
-        "filter_type": "off",  # Filter type ('off', 'lowpass', 'highpass')
-        "filter_cutoff": 8000.0,  # Filter cutoff frequency in Hz
-        "loop_to_fit": False,  # Loop track during final mix
-        "reverse_audio": False,  # Reverse audio playback
-        "ultrasonic_shift": False,  # Apply ultrasonic shift effect
-        "preview_temp_file_path": None,  # Path to the temporary preview audio file
-        "preview_settings_hash": None,  # Hash of settings used for the current preview
-        "update_counter": 0,  # Counter to help refresh UI elements like audix
-        # --- Source/Generation Information ---
-        "source_type": "unknown",  # How the track was created ('upload', 'tts', 'noise', 'binaural', etc.)
-        "original_filename": None,  # Original filename if source_type is 'upload'
-        "tts_text": None,  # Text used if source_type is 'tts'
-        # --- Generation Parameters (for reconstruction on load) ---
-        "gen_duration": None,  # Duration used for generated tracks
-        "gen_freq_left": None,  # Left frequency for binaural
-        "gen_freq_right": None,  # Right frequency for binaural
-        "gen_freq": None,  # Frequency for Solfeggio
-        "gen_carrier_freq": None,  # Carrier frequency for Isochronic
-        "gen_pulse_freq": None,  # Pulse frequency for Isochronic
-        "gen_noise_type": None,  # Type of noise generated
-        "gen_volume": None,  # Volume used during generation
+        # "audio_snippet": None, # Placeholder
+        # "source_info": None, # Placeholder
+        "sr": GLOBAL_SR,
+        "name": "New Track",
+        "track_type": TRACK_TYPE_OTHER,
+        "volume": 1.0,
+        "mute": False,
+        "solo": False,
+        "speed_factor": 1.0,
+        "pitch_shift": 0,
+        "pan": 0.0,
+        "filter_type": "off",
+        "filter_cutoff": 8000.0,
+        "loop_to_fit": False,
+        "reverse_audio": False,
+        "ultrasonic_shift": False,
+        "preview_temp_file_path": None,
+        "preview_settings_hash": None,
+        "update_counter": 0,
     }
 
 

@@ -151,7 +151,8 @@ def main():
         if "tts_generator" not in st.session_state:
             st.session_state.tts_generator = TTSGenerator()
         if "project_handler" not in st.session_state:
-            st.session_state.project_handler = ProjectHandler(st.session_state.app_state, st.session_state.tts_generator)
+            # <<< MODIFIED: Removed tts_generator argument >>>
+            st.session_state.project_handler = ProjectHandler(st.session_state.app_state)
         if "ui_manager" not in st.session_state:
             # Pass the reset function to the UI manager if needed, or keep it here
             st.session_state.ui_manager = UIManager(st.session_state.app_state, st.session_state.tts_generator)

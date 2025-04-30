@@ -11,7 +11,8 @@ import streamlit as st
 from PIL import Image
 
 # Import necessary components from other modules
-from app_state import AppState, TrackData, TrackID, TrackType
+# <<< MODIFIED: Import TrackDataDict instead of TrackData >>>
+from app_state import AppState, TrackDataDict, TrackID, TrackType
 from config import FAVICON_PATH, TRACK_TYPE_OTHER  # Only need constants used directly here
 from track_metadata_ui import TrackMetadataUI
 
@@ -51,7 +52,6 @@ class TrackEditorManager:
 
         # --- Handle Empty State ---
         if not tracks:
-            # <<< MODIFIED: Removed check for 'welcome_message_shown' >>>
             # Always show this message if no tracks exist.
             col_icon, col_text = st.columns([1, 5])
             with col_icon:
@@ -89,7 +89,8 @@ class TrackEditorManager:
 
         track_ids = list(tracks.keys())  # Get keys before iterating
         for track_id in track_ids:
-            track_data = self.app_state.get_track(track_id)  # Get fresh data each iteration
+            # <<< Use TrackDataDict for type hint >>>
+            track_data: Optional[TrackDataDict] = self.app_state.get_track(track_id)  # Get fresh data each iteration
             if track_data is None:
                 logger.warning(f"Track {track_id} not found during editor rendering, likely deleted.")
                 continue  # Skip if track was deleted during rerun
@@ -99,8 +100,17 @@ class TrackEditorManager:
             track_type_str = track_data.get("track_type", TRACK_TYPE_OTHER)
             track_type_icon = track_type_str.split(" ")[0] if " " in track_type_str else "⚪"
             expander_label = f"{track_type_icon} Track: **{track_name}**"
-            if track_data.get("source_type") == "upload" and track_data.get("original_audio") is None:
-                expander_label += "  ⚠️ Missing Source File"
+
+            # <<< Check source_info for upload status >>>
+            source_info = track_data.get("source_info")
+            if source_info and source_info.get("type") == "upload":
+                # Check if temporary path is missing (indicates needs re-upload)
+                if not source_info.get("temp_file_path"):
+                    expander_label += f"  ⚠️ Missing Source: {source_info.get('original_filename', 'Unknown')}"
+                # Check if snippet is missing (indicates needs preview generation)
+                elif track_data.get("audio_snippet") is None:
+                    expander_label += "  ⏳ Needs Preview Update"
+
             expander_label += f"  (`...{track_id[-6:]}`)"  # Add partial ID
 
             # Render track within an expander

@@ -5,29 +5,22 @@
 
 import json
 import logging
-from typing import TYPE_CHECKING
+import os
+import tempfile
+from typing import TYPE_CHECKING, Dict, Optional, cast
 
 import streamlit as st
 
 # --- Type Hinting ---
-# Use TYPE_CHECKING to avoid circular imports at runtime
 if TYPE_CHECKING:
-    from app_state import AppState
-    from audio_processing import AudioData
-    from tts_generator import TTSGenerator
+    from app_state import AppState, SourceInfo, TrackDataDict
 
 # Import necessary components from other modules
-from audio_generators import (
-    generate_binaural_beats,
-    generate_isochronic_tones,
-    generate_noise,
-    generate_solfeggio_frequency,
-)
+from app_state import SourceInfoFrequency, SourceInfoNoise, SourceInfoTTS, SourceInfoUpload
 from config import (
     GLOBAL_SR,
     PROJECT_FILE_VERSION,
     TRACK_TYPE_OTHER,
-    get_default_track_params,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,136 +29,241 @@ logger = logging.getLogger(__name__)
 class ProjectHandler:
     """Handles loading project data from uploaded files."""
 
-    def __init__(self, app_state: "AppState", tts_generator: "TTSGenerator"):
+    def __init__(self, app_state: "AppState"):
         """
         Initializes the ProjectHandler.
 
         Args:
             app_state: The application state manager instance.
-            tts_generator: The TTS generator instance.
         """
         self.app_state = app_state
-        self.tts_generator = tts_generator
         logger.debug("ProjectHandler initialized.")
 
     def load_project(self):
-        """Loads project data from session state if requested."""
+        """
+        Loads project data from session state if requested.
+        Reconstructs track state with source_info but without audio snippets.
+        Attempts to infer source_type for older project files.
+        Aborts loading and clears state if critical errors occur for any track.
+        Prompts user to re-upload necessary files on success.
+        Clears loading state and file uploader state after attempt.
+        """
         logger.info("Checking for project load request.")
-        if st.session_state.get("project_load_requested", False):
+        load_requested = st.session_state.get("project_load_requested", False)
+        loaded_data = st.session_state.get("uploaded_project_file_data")
+        uploaded_file_id = st.session_state.get("uploaded_project_file_id")
+        # <<< Define the key for the load uploader widget >>>
+        load_uploader_key = "sidebar_load_project_uploader"
+
+        if load_requested and loaded_data:
             logger.info("Project load requested. Processing uploaded file data.")
-            loaded_data = st.session_state.get("uploaded_project_file_data")
+            load_successful = False  # Flag to track success
+            load_errors_found = False  # Flag to track critical errors
+            tracks_needing_upload = []  # Reset list for this load attempt
+            temp_loaded_tracks = {}  # Store successfully processed tracks temporarily
 
-            # Reset flags immediately
-            st.session_state.project_load_requested = False
-            st.session_state.uploaded_project_file_data = None  # Clear the loaded data
+            try:
+                project_content = json.loads(loaded_data.decode("utf-8"))
 
-            if loaded_data:
-                try:
-                    # Decode and parse the JSON data
-                    project_content = json.loads(loaded_data.decode("utf-8"))
+                # --- Validation and Track Processing (Same as previous version) ---
+                if not isinstance(project_content, dict) or "tracks" not in project_content or "version" not in project_content:
+                    raise ValueError("Invalid project file structure. Missing 'version' or 'tracks'.")
 
-                    # --- Validate Project Structure ---
-                    if not isinstance(project_content, dict) or "tracks" not in project_content or "version" not in project_content:
-                        raise ValueError("Invalid project file structure. Missing 'version' or 'tracks'.")
+                loaded_version = project_content.get("version", "0.0")
+                if loaded_version != PROJECT_FILE_VERSION:
+                    logger.warning(f"Loading project version {loaded_version}, current app version is {PROJECT_FILE_VERSION}. Compatibility not guaranteed.")
+                    st.warning(f"Loading project from older version ({loaded_version}). Some settings might be lost or default.")
 
-                    # Optional: Check version compatibility
-                    loaded_version = project_content.get("version", "0.0")
-                    if loaded_version != PROJECT_FILE_VERSION:
-                        logger.warning(f"Loading project version {loaded_version}, current app version is {PROJECT_FILE_VERSION}. Compatibility not guaranteed.")
-                        st.warning(f"Loading project from older version ({loaded_version}). Some settings might be lost or default.")
+                loaded_tracks_data = project_content.get("tracks", {})
+                if not isinstance(loaded_tracks_data, dict):
+                    raise ValueError("Invalid 'tracks' data in project file.")
 
-                    loaded_tracks_data = project_content.get("tracks", {})
-                    if not isinstance(loaded_tracks_data, dict):
-                        raise ValueError("Invalid 'tracks' data in project file.")
+                logger.info(f"Valid project structure found (Version: {loaded_version}). Preparing to load {len(loaded_tracks_data)} tracks.")
 
-                    logger.info(f"Valid project structure found (Version: {loaded_version}). Clearing current state and loading {len(loaded_tracks_data)} tracks.")
+                with st.spinner("Validating project tracks..."):
+                    for old_track_id, loaded_track_params in loaded_tracks_data.items():
+                        if load_errors_found:
+                            break
 
-                    # Clear existing tracks before loading
+                        if not isinstance(loaded_track_params, dict):
+                            logger.error(f"Invalid track data entry (not a dict) for old ID {old_track_id}. Aborting load.")
+                            load_errors_found = True
+                            st.error("Project load failed: Invalid track data found in file.")
+                            break
+
+                        track_name = loaded_track_params.get("name", f"Track {old_track_id[:6]}")
+                        logger.debug(f"Validating track '{track_name}' (Old ID: {old_track_id})")
+
+                        source_type = loaded_track_params.get("source_type", "unknown")
+                        source_info: Optional["SourceInfo"] = None
+                        sr = loaded_track_params.get("sr", GLOBAL_SR)
+
+                        if source_type == "unknown":
+                            logger.warning(f"Track '{track_name}' has source_type 'unknown'. Attempting inference...")
+                            if "original_filename" in loaded_track_params:
+                                source_type = "upload"
+                            elif "tts_text" in loaded_track_params:
+                                source_type = "tts"
+                            elif "gen_noise_type" in loaded_track_params:
+                                source_type = "noise"
+                            elif "gen_freq_left" in loaded_track_params or "gen_freq_right" in loaded_track_params:
+                                source_type = "binaural"
+                            elif "gen_freq" in loaded_track_params:
+                                source_type = "solfeggio"
+                            elif "gen_carrier_freq" in loaded_track_params or "gen_pulse_freq" in loaded_track_params:
+                                source_type = "isochronic"
+                            else:
+                                logger.error(f"Could not infer source_type for track '{track_name}'. Aborting load.")
+                                load_errors_found = True
+                                st.error(f"Project load failed: Could not determine source type for track '{track_name}'.")
+                                break
+
+                        try:
+                            # Construct SourceInfo (same logic as before)
+                            if source_type == "upload":
+                                filename = loaded_track_params.get("original_filename")
+                                if filename:
+                                    tracks_needing_upload.append(filename)
+                                    source_info = SourceInfoUpload(type="upload", temp_file_path=None, original_filename=filename)
+                                else:
+                                    raise ValueError("Missing original_filename")
+                            elif source_type == "tts":
+                                text = loaded_track_params.get("tts_text")
+                                if text:
+                                    source_info = SourceInfoTTS(type="tts", text=text)
+                                else:
+                                    raise ValueError("Missing tts_text")
+                            elif source_type == "noise":
+                                noise_type = loaded_track_params.get("gen_noise_type")
+                                target_duration = loaded_track_params.get("gen_duration", 300)
+                                if noise_type:
+                                    source_info = SourceInfoNoise(type="noise", noise_type=noise_type, target_duration_s=target_duration)
+                                else:
+                                    raise ValueError("Missing gen_noise_type")
+                            elif source_type in ["binaural", "binaural_preset", "frequency"] and (
+                                "gen_freq_left" in loaded_track_params or "gen_freq_right" in loaded_track_params
+                            ):
+                                f_left = loaded_track_params.get("gen_freq_left")
+                                f_right = loaded_track_params.get("gen_freq_right")
+                                target_duration = loaded_track_params.get("gen_duration", 300)
+                                if f_left is not None and f_right is not None:
+                                    source_info = SourceInfoFrequency(
+                                        type="frequency",
+                                        freq_type="binaural",
+                                        f_left=f_left,
+                                        f_right=f_right,
+                                        target_duration_s=target_duration,
+                                        freq=None,
+                                        carrier=None,
+                                        pulse=None,
+                                    )
+                                else:
+                                    raise ValueError("Missing binaural frequency data")
+                            elif source_type in ["solfeggio", "solfeggio_preset", "frequency"] and "gen_freq" in loaded_track_params:
+                                freq = loaded_track_params.get("gen_freq")
+                                target_duration = loaded_track_params.get("gen_duration", 300)
+                                if freq is not None:
+                                    source_info = SourceInfoFrequency(
+                                        type="frequency", freq_type="solfeggio", freq=freq, target_duration_s=target_duration, f_left=None, f_right=None, carrier=None, pulse=None
+                                    )
+                                else:
+                                    raise ValueError("Missing solfeggio frequency data")
+                            elif source_type == "isochronic" and ("gen_carrier_freq" in loaded_track_params or "gen_pulse_freq" in loaded_track_params):
+                                carrier = loaded_track_params.get("gen_carrier_freq")
+                                pulse = loaded_track_params.get("gen_pulse_freq")
+                                target_duration = loaded_track_params.get("gen_duration", 300)
+                                if carrier is not None and pulse is not None:
+                                    source_info = SourceInfoFrequency(
+                                        type="frequency",
+                                        freq_type="isochronic",
+                                        carrier=carrier,
+                                        pulse=pulse,
+                                        target_duration_s=target_duration,
+                                        f_left=None,
+                                        f_right=None,
+                                        freq=None,
+                                    )
+                                else:
+                                    raise ValueError("Missing isochronic frequency data")
+                            else:
+                                raise ValueError(f"Unsupported source type '{source_type}'")
+
+                        except Exception as e_info:
+                            logger.exception(f"Error reconstructing source_info for track '{track_name}': {e_info}")
+                            load_errors_found = True
+                            st.error(f"Project load failed: Error processing track '{track_name}'.")
+                            break
+
+                        if source_info is None:
+                            logger.error(f"Failed to create source_info for track '{track_name}'. Aborting load.")
+                            load_errors_found = True
+                            st.error(f"Project load failed: Could not process track '{track_name}'.")
+                            break
+
+                        initial_params = {}
+                        allowed_keys = list(self.app_state.TrackDataDict.__annotations__.keys())
+                        exclude_keys = {"audio_snippet", "source_info", "sr", "preview_temp_file_path", "preview_settings_hash", "update_counter"}
+                        for key, value in loaded_track_params.items():
+                            if key in allowed_keys and key not in exclude_keys:
+                                initial_params[key] = value
+
+                        temp_loaded_tracks[old_track_id] = {"source_info": source_info, "sr": sr, "initial_params": initial_params}
+
+                # --- Add Tracks to State ONLY if NO errors occurred ---
+                if not load_errors_found:
+                    logger.info("Validation complete. No critical errors found. Adding tracks to state.")
+                    self.app_state.clear_all_tracks()
+                    for track_info in temp_loaded_tracks.values():
+                        try:
+                            self.app_state.add_track(audio_snippet=None, source_info=track_info["source_info"], sr=track_info["sr"], initial_params=track_info["initial_params"])
+                        except Exception as e_add:
+                            logger.exception(f"Error adding validated track '{track_info['initial_params'].get('name')}': {e_add}")
+                            st.error(f"Error occurred while adding track '{track_info['initial_params'].get('name')}'. Load might be incomplete.")
+                            load_errors_found = True
+                            break
+
+                    if not load_errors_found:
+                        st.success("Project loaded successfully!")
+                        if tracks_needing_upload:
+                            st.warning(f"Please re-upload the following source audio file(s) using the sidebar: {', '.join(tracks_needing_upload)}")
+                            st.info("Tracks requiring re-upload will show 'Missing Source File' in the editor until the file is provided.")
+                        load_successful = True
+
+                if load_errors_found:
+                    logger.error("Errors found during project load. Clearing application state.")
                     self.app_state.clear_all_tracks()
 
-                    # --- Reconstruct Tracks ---
-                    with st.spinner("Reconstructing project tracks..."):
-                        tracks_needing_upload = []
-                        for old_track_id, track_data in loaded_tracks_data.items():
-                            if not isinstance(track_data, dict):
-                                logger.warning(f"Skipping invalid track data entry (not a dict) for old ID {old_track_id}.")
-                                continue
+            # --- Exception Handling (Same as before) ---
+            except json.JSONDecodeError:
+                logger.error("Failed to decode project file. Invalid JSON.")
+                st.error("Failed to load project: Invalid project file format (not valid JSON).")
+                load_errors_found = True
+            except ValueError as e_val:
+                logger.error(f"Invalid project file content: {e_val}")
+                st.error(f"Failed to load project: {e_val}")
+                load_errors_found = True
+            except Exception as e:
+                logger.exception("An unexpected error occurred while loading the project.")
+                st.error(f"An error occurred while loading the project: {e}")
+                load_errors_found = True
+            finally:
+                # <<< Always clear load request state AND the uploader widget state >>>
+                logger.info("Clearing project load request state.")
+                st.session_state.project_load_requested = False
+                if "uploaded_project_file_data" in st.session_state:
+                    del st.session_state.uploaded_project_file_data
+                if "uploaded_project_file_id" in st.session_state:
+                    del st.session_state.uploaded_project_file_id
+                # <<< Clear the file uploader widget state >>>
+                if load_uploader_key in st.session_state:
+                    st.session_state[load_uploader_key] = None
 
-                            logger.debug(f"Loading track '{track_data.get('name', 'N/A')}' (Old ID: {old_track_id})")
-                            source_type = track_data.get("source_type", "unknown")
-                            track_type = track_data.get("track_type", TRACK_TYPE_OTHER)
-                            reconstructed_audio: "AudioData" | None = None  # Use type hint
+                # Rerun only if load was fully successful
+                if load_successful:
+                    logger.info("Load successful, rerunning.")
+                    st.rerun()
+                else:
+                    logger.info("Load unsuccessful or errors found, not rerunning via project handler.")
 
-                            # --- Regenerate Audio Based on Source Type ---
-                            try:
-                                if source_type == "tts" and "tts_text" in track_data:
-                                    logger.info(f"Regenerating TTS for track '{track_data.get('name')}'")
-                                    reconstructed_audio, _ = self.tts_generator.generate(track_data["tts_text"])
-                                elif source_type == "noise" and "gen_noise_type" in track_data:
-                                    noise_type = track_data["gen_noise_type"]
-                                    duration = track_data.get("gen_duration", 60)
-                                    volume = track_data.get("gen_volume", 0.5)
-                                    logger.info(f"Regenerating {noise_type} ({duration}s, vol={volume}) for track '{track_data.get('name')}'")
-                                    reconstructed_audio = generate_noise(noise_type, duration, GLOBAL_SR, volume)
-                                elif source_type == "binaural" and "gen_freq_left" in track_data:
-                                    duration = track_data.get("gen_duration", 60)
-                                    f_left = track_data["gen_freq_left"]
-                                    f_right = track_data.get("gen_freq_right", f_left + 10.0)  # Default beat
-                                    volume = track_data.get("gen_volume", 0.3)
-                                    logger.info(f"Regenerating Binaural ({duration}s, L={f_left}, R={f_right}, vol={volume}) for track '{track_data.get('name')}'")
-                                    reconstructed_audio = generate_binaural_beats(duration, f_left, f_right, GLOBAL_SR, volume)
-                                elif source_type == "solfeggio" and "gen_freq" in track_data:
-                                    duration = track_data.get("gen_duration", 60)
-                                    freq = track_data["gen_freq"]
-                                    volume = track_data.get("gen_volume", 0.3)
-                                    logger.info(f"Regenerating Solfeggio ({duration}s, F={freq}, vol={volume}) for track '{track_data.get('name')}'")
-                                    reconstructed_audio = generate_solfeggio_frequency(duration, freq, GLOBAL_SR, volume)
-                                elif source_type == "isochronic" and "gen_carrier_freq" in track_data:
-                                    duration = track_data.get("gen_duration", 60)
-                                    carrier = track_data["gen_carrier_freq"]
-                                    pulse = track_data.get("gen_pulse_freq", 10.0)  # Default pulse
-                                    volume = track_data.get("gen_volume", 0.4)
-                                    logger.info(f"Regenerating Isochronic ({duration}s, C={carrier}, P={pulse}, vol={volume}) for track '{track_data.get('name')}'")
-                                    reconstructed_audio = generate_isochronic_tones(duration, carrier, pulse, GLOBAL_SR, volume)
-                                elif source_type == "upload":
-                                    filename = track_data.get("original_filename", "Unknown File")
-                                    logger.warning(f"Track '{track_data.get('name')}' is an upload ('{filename}'). Audio data needs re-upload.")
-                                    tracks_needing_upload.append(filename)
-                                    reconstructed_audio = None
-                                else:
-                                    logger.warning(f"Unknown or missing source_type ('{source_type}') for track '{track_data.get('name')}'. Cannot reconstruct audio.")
-                                    reconstructed_audio = None
-
-                            except Exception as e_gen:
-                                logger.error(f"Error regenerating audio for track '{track_data.get('name')}': {e_gen}")
-                                st.warning(f"Could not regenerate audio for track '{track_data.get('name')}'.")
-                                reconstructed_audio = None
-
-                            # --- Add Track to State ---
-                            track_data["original_audio"] = reconstructed_audio
-                            track_data["sr"] = GLOBAL_SR
-                            # Ensure all default keys exist
-                            final_track_data_for_load = get_default_track_params()
-                            final_track_data_for_load.update(track_data)
-
-                            try:
-                                self.app_state.add_track(final_track_data_for_load, track_type=track_type)
-                            except ValueError as e_add:
-                                logger.error(f"Failed to add loaded track '{track_data.get('name')}': {e_add}")
-                                st.error(f"Failed to load track '{track_data.get('name')}'.")
-
-                    st.success("Project loaded successfully!")
-                    if tracks_needing_upload:
-                        st.warning(f"Please re-upload the following audio file(s): {', '.join(tracks_needing_upload)}")
-
-                except json.JSONDecodeError:
-                    logger.error("Failed to decode project file. Invalid JSON.")
-                    st.error("Failed to load project: Invalid project file format (not valid JSON).")
-                except ValueError as e_val:
-                    logger.error(f"Invalid project file content: {e_val}")
-                    st.error(f"Failed to load project: {e_val}")
-                except Exception as e:
-                    logger.exception("An unexpected error occurred while loading the project.")
-                    st.error(f"An error occurred while loading the project: {e}")
-            else:
-                logger.debug("No project load requested or no file data found.")
+        else:
+            logger.debug("No project load requested or no file data found.")

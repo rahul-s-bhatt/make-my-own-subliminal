@@ -4,12 +4,13 @@
 # ==========================================
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional  # <<< Added Optional
 
 import streamlit as st
 
 # Import necessary components from other modules
-from app_state import AppState, TrackData, TrackID, TrackType
+# <<< MODIFIED: Import TrackDataDict instead of TrackData >>>
+from app_state import AppState, TrackDataDict, TrackID, TrackType
 from config import TRACK_TYPE_OTHER, TRACK_TYPES
 
 logger = logging.getLogger(__name__)
@@ -28,8 +29,8 @@ class TrackMetadataUI:
         self.app_state = app_state
         logger.debug("TrackMetadataUI initialized.")
 
-    # <<< MODIFIED: Added 'mode' parameter >>>
-    def render_metadata_column(self, track_id: TrackID, track_data: TrackData, column: st.delta_generator.DeltaGenerator, mode: str = "Easy") -> bool:
+    # <<< MODIFIED: Added 'mode' parameter and use TrackDataDict >>>
+    def render_metadata_column(self, track_id: TrackID, track_data: TrackDataDict, column: st.delta_generator.DeltaGenerator, mode: str = "Easy") -> bool:
         """
         Renders the side controls for a track (Name, Type, Mute, Solo, Delete).
 
@@ -83,15 +84,13 @@ class TrackMetadataUI:
                 if mode == "Advanced":
                     st.markdown("---")
                     st.caption("Advanced Controls")
-                    # Example: Add Panning slider
-                    # current_pan = track_data.get("pan", 0.0)
-                    # new_pan = st.slider("Pan (L/R)", -1.0, 1.0, current_pan, 0.05, key=f"pan_{track_id}")
-                    # if new_pan != current_pan:
-                    #     self.app_state.update_track_param(track_id, "pan", new_pan)
+                    # Example: Add Panning slider (already exists under basic settings)
+                    # Consider moving Pan here if it should be Advanced only
 
                     # Example: Add other advanced controls like Pitch Shift, Ultrasonic etc.
-                    # if they belong in this component.
-                    st.info("Advanced controls (e.g., Pan) would appear here.")
+                    # if they belong in this component (currently in TrackPreviewUI).
+                    # If controls are complex, they might warrant their own sub-component.
+                    st.info("Advanced-only controls would appear here.")
 
                 # --- Delete Button (Visible in both modes) ---
                 st.markdown("---")

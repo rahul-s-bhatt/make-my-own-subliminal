@@ -22,8 +22,9 @@ from audio_generators import (
 from audio_io import save_audio_to_bytesio
 from config import GLOBAL_SR
 
+# <<< MODIFIED: Import AudioData definition for type hinting >>>
 if TYPE_CHECKING:
-    from audio_processing import AudioData
+    from audio_state_definitions import AudioData
 
 # Define presets locally or import from a shared config/wizard_config
 WIZARD_FREQ_PRESETS = {
@@ -101,7 +102,8 @@ def render_step_3(wizard):
                         st.session_state.wizard_frequency_audio = audio
                         st.session_state.wizard_frequency_sr = GLOBAL_SR
                         # Optional preview:
-                        # st.audio(save_audio_to_bytesio(audio, GLOBAL_SR), format="audio/wav")
+                        # preview_buffer = save_audio_to_bytesio(audio, GLOBAL_SR)
+                        # if preview_buffer: st.audio(preview_buffer, format="audio/wav")
                         st.rerun()  # Rerun now that audio exists
                     else:
                         st.error(f"Failed to generate {preset_name}.")

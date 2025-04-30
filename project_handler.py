@@ -13,15 +13,24 @@ import streamlit as st
 
 # --- Type Hinting ---
 if TYPE_CHECKING:
-    from app_state import AppState, SourceInfo, TrackDataDict
+    from app_state import AppState  # Keep this import
+
+    # <<< MODIFIED: Import types from definitions file >>>
+    from audio_state_definitions import SourceInfo, TrackDataDict
 
 # Import necessary components from other modules
-from app_state import SourceInfoFrequency, SourceInfoNoise, SourceInfoTTS, SourceInfoUpload
+# <<< MODIFIED: Import SourceInfo types from definitions file >>>
+from audio_state_definitions import SourceInfoFrequency, SourceInfoNoise, SourceInfoTTS, SourceInfoUpload
 from config import (
     GLOBAL_SR,
     PROJECT_FILE_VERSION,
     TRACK_TYPE_OTHER,
 )
+
+# <<< REMOVED import of SourceInfo types from app_state >>>
+# from app_state import (SourceInfoUpload, SourceInfoTTS, SourceInfoNoise,
+#                        SourceInfoFrequency)
+
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +61,6 @@ class ProjectHandler:
         load_requested = st.session_state.get("project_load_requested", False)
         loaded_data = st.session_state.get("uploaded_project_file_data")
         uploaded_file_id = st.session_state.get("uploaded_project_file_id")
-        # <<< Define the key for the load uploader widget >>>
         load_uploader_key = "sidebar_load_project_uploader"
 
         if load_requested and loaded_data:
@@ -65,7 +73,7 @@ class ProjectHandler:
             try:
                 project_content = json.loads(loaded_data.decode("utf-8"))
 
-                # --- Validation and Track Processing (Same as previous version) ---
+                # --- Validation and Track Processing ---
                 if not isinstance(project_content, dict) or "tracks" not in project_content or "version" not in project_content:
                     raise ValueError("Invalid project file structure. Missing 'version' or 'tracks'.")
 
@@ -119,7 +127,7 @@ class ProjectHandler:
                                 break
 
                         try:
-                            # Construct SourceInfo (same logic as before)
+                            # Construct SourceInfo
                             if source_type == "upload":
                                 filename = loaded_track_params.get("original_filename")
                                 if filename:
@@ -187,26 +195,24 @@ class ProjectHandler:
                                     raise ValueError("Missing isochronic frequency data")
                             else:
                                 raise ValueError(f"Unsupported source type '{source_type}'")
-
                         except Exception as e_info:
                             logger.exception(f"Error reconstructing source_info for track '{track_name}': {e_info}")
                             load_errors_found = True
                             st.error(f"Project load failed: Error processing track '{track_name}'.")
                             break
-
                         if source_info is None:
                             logger.error(f"Failed to create source_info for track '{track_name}'. Aborting load.")
                             load_errors_found = True
                             st.error(f"Project load failed: Could not process track '{track_name}'.")
                             break
 
+                        # Prepare Initial Parameters
                         initial_params = {}
                         allowed_keys = list(self.app_state.TrackDataDict.__annotations__.keys())
                         exclude_keys = {"audio_snippet", "source_info", "sr", "preview_temp_file_path", "preview_settings_hash", "update_counter"}
                         for key, value in loaded_track_params.items():
                             if key in allowed_keys and key not in exclude_keys:
                                 initial_params[key] = value
-
                         temp_loaded_tracks[old_track_id] = {"source_info": source_info, "sr": sr, "initial_params": initial_params}
 
                 # --- Add Tracks to State ONLY if NO errors occurred ---
@@ -221,49 +227,44 @@ class ProjectHandler:
                             st.error(f"Error occurred while adding track '{track_info['initial_params'].get('name')}'. Load might be incomplete.")
                             load_errors_found = True
                             break
-
                     if not load_errors_found:
                         st.success("Project loaded successfully!")
                         if tracks_needing_upload:
-                            st.warning(f"Please re-upload the following source audio file(s) using the sidebar: {', '.join(tracks_needing_upload)}")
-                            st.info("Tracks requiring re-upload will show 'Missing Source File' in the editor until the file is provided.")
+                            st.warning(f"Please re-upload source file(s): {', '.join(tracks_needing_upload)}")
+                            st.info("Tracks needing re-upload show 'Missing Source File'.")
                         load_successful = True
-
                 if load_errors_found:
                     logger.error("Errors found during project load. Clearing application state.")
                     self.app_state.clear_all_tracks()
 
-            # --- Exception Handling (Same as before) ---
+            # --- Exception Handling ---
             except json.JSONDecodeError:
-                logger.error("Failed to decode project file. Invalid JSON.")
-                st.error("Failed to load project: Invalid project file format (not valid JSON).")
+                logger.error("Failed decode project file.")
+                st.error("Load failed: Invalid project file format.")
                 load_errors_found = True
             except ValueError as e_val:
                 logger.error(f"Invalid project file content: {e_val}")
-                st.error(f"Failed to load project: {e_val}")
+                st.error(f"Load failed: {e_val}")
                 load_errors_found = True
             except Exception as e:
-                logger.exception("An unexpected error occurred while loading the project.")
-                st.error(f"An error occurred while loading the project: {e}")
+                logger.exception("Unexpected error loading project.")
+                st.error(f"Error loading project: {e}")
                 load_errors_found = True
             finally:
-                # <<< Always clear load request state AND the uploader widget state >>>
+                # --- Always clear load request state ---
                 logger.info("Clearing project load request state.")
                 st.session_state.project_load_requested = False
                 if "uploaded_project_file_data" in st.session_state:
                     del st.session_state.uploaded_project_file_data
                 if "uploaded_project_file_id" in st.session_state:
                     del st.session_state.uploaded_project_file_id
-                # <<< Clear the file uploader widget state >>>
                 if load_uploader_key in st.session_state:
-                    st.session_state[load_uploader_key] = None
-
+                    st.session_state[load_uploader_key] = None  # Clear uploader widget
                 # Rerun only if load was fully successful
                 if load_successful:
                     logger.info("Load successful, rerunning.")
                     st.rerun()
                 else:
                     logger.info("Load unsuccessful or errors found, not rerunning via project handler.")
-
         else:
             logger.debug("No project load requested or no file data found.")

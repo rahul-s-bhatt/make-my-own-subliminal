@@ -1,39 +1,40 @@
 your_project_root_directory/
 │
-├── assets/                 # Folder for static assets
+├── assets/
 │   ├── favico.png
 │   └── logo.png
 │
-├── wizard_steps/           # Folder for Quick Wizard step modules
+├── wizard_steps/
 │   ├── __init__.py
 │   ├── step_1_affirmations.py
 │   ├── step_2_background.py
 │   ├── step_3_frequency.py
 │   └── step_4_export.py
 │
-├── main.py                 # Main application entry point (router)
-├── config.py               # Configuration constants
-├── app_state.py            # Advanced Editor state management
-├── ui_manager.py           # Main UI orchestrator (coordinates sidebar/editor)
-├── sidebar_manager.py      # Sidebar UI orchestrator
-├── sidebar_uploader.py     # Sidebar UI for uploads/TTS
-├── sidebar_generators.py   # Sidebar UI for noise/frequency generation
-├── track_editor_manager.py # Track editor panel orchestrator
-├── track_preview_ui.py     # Track editor UI (preview column)
-├── track_metadata_ui.py    # Track editor UI (metadata/controls column)
-├── audio_io.py             # Audio file loading/saving utilities
-├── audio_effects.py        # Individual audio effect functions (speed, pitch, etc.)
-├── audio_generators.py     # Functions to generate noise, frequencies
-├── tts_generator.py        # Text-to-Speech generation logic
-├── utils.py                # General utility functions (logging setup, file reading)
-├── wizard_state.py         # Quick Wizard state management
-├── quick_wizard.py         # Quick Wizard workflow orchestrator
-├── project_handler.py      # Project loading logic (Save/Load currently removed/disabled)
+├── main.py
+├── config.py
+├── app_state.py                 # Focuses on state dict management
+├── audio_state_definitions.py # NEW: Holds TypeDicts, type aliases
+├── audio_loader.py            # NEW: Handles loading/regenerating full audio
+├── ui_manager.py
+├── sidebar_manager.py
+├── sidebar_uploader.py
+├── sidebar_generators.py
+├── track_editor_manager.py
+├── track_preview_ui.py
+├── track_metadata_ui.py
+├── audio_io.py
+├── audio_effects.py
+├── audio_effects_pipeline.py  # NEW: Applies sequence of effects
+├── audio_preview.py           # NEW: Generates track previews
+├── audio_mixers.py            # NEW: Contains mix_tracks & mix_wizard_tracks
+├── audio_generators.py
+├── tts_generator.py
+├── utils.py
+├── wizard_state.py
+├── quick_wizard.py
+├── project_handler.py         # Handles loading (Save/Load UI currently removed)
 │
-├── audio_effects_pipeline.py # NEW: Applies sequence of effects
-├── audio_preview.py        # NEW: Generates track previews for Advanced Editor
-├── audio_mixers.py         # NEW: Contains mix_tracks and mix_wizard_tracks
-│
-├── requirements.txt        # Python package dependencies
-├── editor_oop.log          # Log file (generated at runtime)
+├── requirements.txt
+├── editor_oop.log
 └── (Other files like README.md, .gitignore, etc.)

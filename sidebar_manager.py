@@ -6,19 +6,22 @@
 import json
 import logging
 import os
-from typing import Any, Dict, cast  # Keep cast if needed elsewhere, maybe not
+from typing import Any, Dict, cast
 
 import numpy as np
 import streamlit as st
 from PIL import Image
 
 # Import necessary components from other modules
-from app_state import AppState, TrackDataDict, TrackType
+from app_state import AppState  # Keep AppState import
+
+# <<< MODIFIED: Import types from definitions file >>>
+from audio_state_definitions import TrackDataDict, TrackType
 
 # Import config/utils as needed by this class
 from config import (
     LOGO_PATH,
-    PROJECT_FILE_VERSION,  # Might remove if save/load is gone
+    PROJECT_FILE_VERSION,
 )
 from sidebar_generators import SidebarGenerators
 from sidebar_uploader import SidebarUploader
@@ -91,4 +94,4 @@ class SidebarManager:
     # def _render_save_load(self):
     #     """Renders project save and load components in the sidebar."""
     #     # ... (Entire method content commented out or deleted) ...
-    #     pass # Keep method definition if just commenting out content, or remove entirely
+    #     pass

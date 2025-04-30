@@ -22,13 +22,10 @@ from audio_io import save_audio_to_bytesio
 # <<< MODIFIED: Import mix_tracks from audio_mixers >>>
 from audio_mixers import mix_tracks
 
-# <<< Type hint for AudioData >>>
-try:
-    from audio_effects_pipeline import AudioData
-except ImportError:
-    AudioData = np.ndarray  # Fallback
-# --- End Updated Audio Imports ---
+# <<< MODIFIED: Import types from definitions file >>>
+from audio_state_definitions import AudioData  # Import type hint
 
+# --- End Updated Audio Imports ---
 from config import (
     GLOBAL_SR,
     MIX_PREVIEW_DURATION_S,
@@ -60,7 +57,7 @@ class UIManager:
 
     def __init__(self, app_state: AppState, tts_generator: TTSGenerator):
         """Initializes the UIManager and its sub-managers."""
-        self.app_state = app_state
+        self.app_state = app_state  # Still needed for other parts
         self.sidebar_manager = SidebarManager(app_state, tts_generator)
         self.track_editor_manager = TrackEditorManager(app_state)
         logger.debug("UIManager initialized with sub-managers.")
@@ -168,8 +165,14 @@ class UIManager:
             return
         with st.spinner("Generating preview mix..."):
             try:
-                # Call mix_tracks from audio_mixers
-                mix_preview, _ = mix_tracks(app_state=self.app_state, tracks_dict=tracks, preview=True, preview_duration_s=MIX_PREVIEW_DURATION_S, target_sr=GLOBAL_SR)
+                # <<< MODIFIED: Removed app_state argument >>>
+                mix_preview, _ = mix_tracks(
+                    # app_state=self.app_state, # Removed
+                    tracks_dict=tracks,
+                    preview=True,
+                    preview_duration_s=MIX_PREVIEW_DURATION_S,
+                    target_sr=GLOBAL_SR,
+                )
                 if mix_preview is not None and mix_preview.size > 0:
                     preview_buffer = save_audio_to_bytesio(mix_preview, GLOBAL_SR)
                     st.session_state.preview_audio_data = preview_buffer
@@ -198,8 +201,13 @@ class UIManager:
             return
         with st.spinner(f"Generating full mix ({export_format.upper()})... This may take time."):
             try:
-                # Call mix_tracks from audio_mixers
-                full_mix, final_mix_len_samples = mix_tracks(app_state=self.app_state, tracks_dict=tracks, preview=False, target_sr=GLOBAL_SR)
+                # <<< MODIFIED: Removed app_state argument >>>
+                full_mix, final_mix_len_samples = mix_tracks(
+                    # app_state=self.app_state, # Removed
+                    tracks_dict=tracks,
+                    preview=False,
+                    target_sr=GLOBAL_SR,
+                )
                 if final_mix_len_samples is not None and GLOBAL_SR > 0:
                     st.session_state.calculated_mix_duration_s = final_mix_len_samples / GLOBAL_SR
                     logger.info(f"Actual final mix duration: {st.session_state.calculated_mix_duration_s:.2f}s")

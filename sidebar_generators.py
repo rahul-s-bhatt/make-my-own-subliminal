@@ -10,25 +10,12 @@ import numpy as np
 import streamlit as st
 
 # Import necessary components from other modules
-# <<< Updated AppState imports >>>
-from app_state import AppState, SourceInfoFrequency, SourceInfoNoise, TrackType
+from app_state import AppState  # Keep AppState import
 from audio_generators import generate_binaural_beats, generate_isochronic_tones, generate_noise, generate_solfeggio_frequency
 
-# Type hint (ensure consistency across files)
-try:
-    from audio_processing import AudioData
-except ImportError:
-    AudioData = np.ndarray
-# <<< Updated Config imports >>>
-from config import (
-    GENERATOR_SNIPPET_DURATION_S,
-    GLOBAL_SR,
-    MAX_TRACK_LIMIT,  # <<< Added track limit constant
-    TRACK_TYPE_BACKGROUND,
-    TRACK_TYPE_FREQUENCY,
-)
-
-# get_default_track_params no longer needed here
+# <<< MODIFIED: Import types from definitions file >>>
+from audio_state_definitions import AudioData, SourceInfoFrequency, SourceInfoNoise, TrackType
+from config import GENERATOR_SNIPPET_DURATION_S, GLOBAL_SR, MAX_TRACK_LIMIT, TRACK_TYPE_BACKGROUND, TRACK_TYPE_FREQUENCY
 
 # Get a logger for this module
 logger = logging.getLogger(__name__)
@@ -38,17 +25,11 @@ class SidebarGenerators:
     """Handles rendering frequency and noise generator UI in the sidebar."""
 
     def __init__(self, app_state: AppState):
-        """
-        Initializes the SidebarGenerators.
-
-        Args:
-            app_state: An instance of the AppState class.
-        """
+        """Initializes the SidebarGenerators."""
         self.app_state = app_state
         logger.debug("SidebarGenerators initialized.")
 
     # --- Check Track Limit Helper ---
-    # <<< Copied from SidebarUploader >>>
     def _check_track_limit(self, adding_count: int = 1) -> bool:
         """Checks if adding tracks would exceed the limit."""
         current_count = len(self.app_state.get_all_tracks())
@@ -64,8 +45,6 @@ class SidebarGenerators:
         """Renders frequency/tone generation options based on app mode."""
         st.subheader("🧠✨ Add Frequencies / Tones")
         app_mode = st.session_state.get("app_mode", "Easy")
-
-        # <<< Check limit and potentially disable UI >>>
         limit_reached = len(self.app_state.get_all_tracks()) >= MAX_TRACK_LIMIT
         if limit_reached:
             st.warning(f"Track limit ({MAX_TRACK_LIMIT}) reached.", icon="⚠️")
@@ -73,7 +52,7 @@ class SidebarGenerators:
         if app_mode == "Easy":
             available_gen_types = ["Presets"]
             st.caption("Use presets for common frequency patterns.")
-        else:  # Advanced mode
+        else:
             available_gen_types = ["Binaural Beats", "Solfeggio Tones", "Isochronic Tones", "Presets"]
             st.caption("Generate specific tones or use presets.")
 
@@ -85,18 +64,10 @@ class SidebarGenerators:
             default_index = available_gen_types.index(default_gen_type)
         except ValueError:
             default_index = 0
-
         gen_type = st.radio(
-            "Select Frequency Type:",
-            available_gen_types,
-            index=default_index,
-            key=gen_type_key,
-            horizontal=True,
-            label_visibility="collapsed",
-            disabled=limit_reached,  # <<< Disable if limit reached >>>
+            "Select Frequency Type:", available_gen_types, index=default_index, key=gen_type_key, horizontal=True, label_visibility="collapsed", disabled=limit_reached
         )
 
-        # Call private methods to render specific generator UI, passing the disabled state
         if gen_type == "Presets":
             self._render_frequency_presets(disabled=limit_reached)
         elif gen_type == "Binaural Beats" and app_mode == "Advanced":
@@ -109,45 +80,19 @@ class SidebarGenerators:
     def render_background_generators(self):
         """Renders options for generating background noise."""
         st.subheader("🎵 Add Background Noise")
-
-        # <<< Check limit and potentially disable UI >>>
         limit_reached = len(self.app_state.get_all_tracks()) >= MAX_TRACK_LIMIT
         if limit_reached:
             st.warning(f"Track limit ({MAX_TRACK_LIMIT}) reached.", icon="⚠️")
-
         noise_options = ["White Noise", "Pink Noise", "Brown Noise"]
-        noise_type = st.selectbox(
-            "Select Noise Type:",
-            noise_options,
-            key="sidebar_noise_type",
-            help="Choose a type of background noise.",
-            disabled=limit_reached,  # <<< Disable if limit reached >>>
-        )
-
-        # Get user requested duration, but generate only a snippet
+        noise_type = st.selectbox("Select Noise Type:", noise_options, key="sidebar_noise_type", help="Choose background noise.", disabled=limit_reached)
         noise_duration_req = st.number_input(
-            "Target Duration (s)",
-            10,
-            7200,
-            300,
-            10,
-            key="sidebar_noise_duration",
-            help="Target length in seconds for the final mix. Noise will loop.",
-            disabled=limit_reached,  # <<< Disable if limit reached >>>
+            "Target Duration (s)", 10, 7200, 300, 10, key="sidebar_noise_duration", help="Target length for final mix. Noise will loop.", disabled=limit_reached
         )
-
-        if st.button(
-            f"Generate {noise_type} Track",
-            key="sidebar_generate_noise",
-            disabled=limit_reached,  # <<< Disable if limit reached >>>
-        ):
-            # <<< Check limit before proceeding >>>
+        if st.button(f"Generate {noise_type} Track", key="sidebar_generate_noise", disabled=limit_reached):
             if not self._check_track_limit(adding_count=1):
-                return  # Stop if limit reached
-
+                return
             with st.spinner(f"Generating {noise_type} snippet..."):
                 audio_snippet = generate_noise(noise_type, GENERATOR_SNIPPET_DURATION_S, GLOBAL_SR, volume=1.0)
-
             if audio_snippet is not None and audio_snippet.size > 0:
                 source_info: SourceInfoNoise = {"type": "noise", "noise_type": noise_type, "target_duration_s": noise_duration_req}
                 initial_params = {"name": noise_type, "track_type": TRACK_TYPE_BACKGROUND, "loop_to_fit": True, "volume": 0.5}
@@ -159,11 +104,9 @@ class SidebarGenerators:
             else:
                 st.error(f"Failed to generate {noise_type}.")
 
-    # --- Private Rendering Methods for Specific Generators ---
-    # <<< Pass disabled state down >>>
+    # --- Private Rendering Methods ---
     def _render_frequency_presets(self, disabled: bool = False):
-        """Renders the UI for selecting and generating frequency presets."""
-        st.markdown("<small>Generate common frequency patterns like Alpha for focus or Delta for sleep.</small>", unsafe_allow_html=True)
+        st.markdown("<small>Generate common frequency patterns.</small>", unsafe_allow_html=True)
         preset_options = {
             "Focus (Alpha 10Hz Binaural)": {"type": "binaural", "f_left": 200.0, "f_right": 210.0},
             "Relaxation (Theta 5Hz Binaural)": {"type": "binaural", "f_left": 150.0, "f_right": 155.0},
@@ -171,52 +114,20 @@ class SidebarGenerators:
             "Love Frequency (Solfeggio 528Hz)": {"type": "solfeggio", "freq": 528.0},
             "Miracle Tone (Solfeggio 417Hz)": {"type": "solfeggio", "freq": 417.0},
         }
-        preset_name = st.selectbox(
-            "Select Preset:",
-            list(preset_options.keys()),
-            key="sidebar_freq_preset_select",
-            disabled=disabled,  # <<< Disable if limit reached >>>
-        )
+        preset_name = st.selectbox("Select Preset:", list(preset_options.keys()), key="sidebar_freq_preset_select", disabled=disabled)
         preset_data = preset_options[preset_name]
-
         cols_preset = st.columns(2)
         with cols_preset[0]:
-            preset_duration_req = st.number_input(
-                "Target Duration (s)",
-                10,
-                7200,
-                300,
-                10,
-                key="sidebar_preset_duration",
-                help="Target length in seconds for the final mix. Tone will loop.",
-                disabled=disabled,  # <<< Disable if limit reached >>>
-            )
+            preset_duration_req = st.number_input("Target Duration (s)", 10, 7200, 300, 10, key="sidebar_preset_duration", help="Target length. Tone will loop.", disabled=disabled)
         with cols_preset[1]:
-            preset_initial_vol = st.slider(
-                "Initial Volume",
-                0.0,
-                1.0,
-                0.2,
-                0.05,
-                key="sidebar_preset_volume",
-                help="Initial volume (usually kept low).",
-                disabled=disabled,  # <<< Disable if limit reached >>>
-            )
-
-        if st.button(
-            f"Generate '{preset_name}' Track",
-            key="sidebar_generate_preset",
-            disabled=disabled,  # <<< Disable if limit reached >>>
-        ):
-            # <<< Check limit before proceeding >>>
+            preset_initial_vol = st.slider("Initial Volume", 0.0, 1.0, 0.2, 0.05, key="sidebar_preset_volume", help="Initial volume.", disabled=disabled)
+        if st.button(f"Generate '{preset_name}' Track", key="sidebar_generate_preset", disabled=disabled):
             if not self._check_track_limit(adding_count=1):
-                return  # Stop if limit reached
-
+                return
             with st.spinner(f"Generating {preset_name} snippet..."):
                 audio_snippet: Optional[AudioData] = None
                 source_info: Optional[SourceInfoFrequency] = None
                 gen_volume = 1.0
-
                 if preset_data["type"] == "binaural":
                     audio_snippet = generate_binaural_beats(GENERATOR_SNIPPET_DURATION_S, preset_data["f_left"], preset_data["f_right"], GLOBAL_SR, gen_volume)
                     source_info = {
@@ -241,7 +152,6 @@ class SidebarGenerators:
                         "carrier": None,
                         "pulse": None,
                     }
-
                 if audio_snippet is not None and audio_snippet.size > 0 and source_info is not None:
                     initial_params = {"name": preset_name, "track_type": TRACK_TYPE_FREQUENCY, "loop_to_fit": True, "volume": preset_initial_vol}
                     new_track_id = self.app_state.add_track(audio_snippet=audio_snippet, source_info=source_info, sr=GLOBAL_SR, initial_params=initial_params)
@@ -250,23 +160,20 @@ class SidebarGenerators:
                 elif audio_snippet is not None:
                     st.warning("Generated preset snippet was empty.")
                 else:
-                    st.error("Failed to generate audio snippet for the selected preset.")
+                    st.error("Failed to generate audio snippet for preset.")
 
     def _render_binaural_generator(self, disabled: bool = False):
-        """Renders UI for generating custom Binaural Beats (Advanced Mode)."""
-        st.markdown("<small>Generates stereo tones potentially inducing brainwave states (requires headphones).</small>", unsafe_allow_html=True)
+        st.markdown("<small>Generates stereo tones (requires headphones).</small>", unsafe_allow_html=True)
         bb_cols = st.columns(2)
         with bb_cols[0]:
-            bb_duration_req = st.number_input("Target Duration (s)", 10, 7200, 300, 10, key="sidebar_bb_duration", help="Length in seconds. Tone will loop.", disabled=disabled)
+            bb_duration_req = st.number_input("Target Duration (s)", 10, 7200, 300, 10, key="sidebar_bb_duration", help="Length. Tone will loop.", disabled=disabled)
             bb_fleft = st.number_input("Left Freq (Hz)", 20.0, 1000.0, 200.0, 0.1, format="%.1f", key="sidebar_bb_freq_left", help="Left ear frequency.", disabled=disabled)
         with bb_cols[1]:
-            bb_initial_vol = st.slider("Initial Volume##BB", 0.0, 1.0, 0.3, 0.05, key="sidebar_bb_volume", help="Initial loudness (usually kept low).", disabled=disabled)
+            bb_initial_vol = st.slider("Initial Volume##BB", 0.0, 1.0, 0.3, 0.05, key="sidebar_bb_volume", help="Initial loudness.", disabled=disabled)
             bb_fright = st.number_input("Right Freq (Hz)", 20.0, 1000.0, 210.0, 0.1, format="%.1f", key="sidebar_bb_freq_right", help="Right ear frequency.", disabled=disabled)
-
         beat_freq = abs(bb_fleft - bb_fright)
         st.caption(f"Resulting Beat Frequency: {beat_freq:.1f} Hz")
-
-        if st.button("Generate Binaural Track", key="sidebar_generate_bb", help="Create track with these settings.", disabled=disabled):
+        if st.button("Generate Binaural Track", key="sidebar_generate_bb", help="Create track.", disabled=disabled):
             if not self._check_track_limit(adding_count=1):
                 return
             with st.spinner("Generating Binaural Beats snippet..."):
@@ -293,11 +200,9 @@ class SidebarGenerators:
                 st.error("Failed to generate binaural beats snippet.")
 
     def _render_solfeggio_generator(self, disabled: bool = False):
-        """Renders UI for generating Solfeggio Tones (Advanced Mode)."""
-        st.markdown("<small>Generates pure tones based on historical Solfeggio frequencies.</small>", unsafe_allow_html=True)
+        st.markdown("<small>Generates pure tones based on Solfeggio frequencies.</small>", unsafe_allow_html=True)
         freqs = [174.0, 285.0, 396.0, 417.0, 528.0, 639.0, 741.0, 852.0, 963.0]
         freq_labels = {f: f"{f} Hz" for f in freqs}
-
         cols = st.columns(2)
         with cols[0]:
             freq = st.selectbox(
@@ -310,13 +215,9 @@ class SidebarGenerators:
                 disabled=disabled,
             )
         with cols[1]:
-            duration_req = st.number_input(
-                "Target Duration (s)##Solf", 10, 7200, 300, 10, key="sidebar_solf_duration", help="Length in seconds. Tone will loop.", disabled=disabled
-            )
-
-        initial_vol = st.slider("Initial Volume##Solf", 0.0, 1.0, 0.3, 0.05, key="sidebar_solf_volume", help="Initial loudness (usually kept low).", disabled=disabled)
-
-        if st.button("Generate Solfeggio Track", key="sidebar_generate_solf", help="Create track with this tone.", disabled=disabled):
+            duration_req = st.number_input("Target Duration (s)##Solf", 10, 7200, 300, 10, key="sidebar_solf_duration", help="Length. Tone will loop.", disabled=disabled)
+        initial_vol = st.slider("Initial Volume##Solf", 0.0, 1.0, 0.3, 0.05, key="sidebar_solf_volume", help="Initial loudness.", disabled=disabled)
+        if st.button("Generate Solfeggio Track", key="sidebar_generate_solf", help="Create track.", disabled=disabled):
             if not self._check_track_limit(adding_count=1):
                 return
             with st.spinner("Generating Solfeggio Tone snippet..."):
@@ -343,31 +244,15 @@ class SidebarGenerators:
                 st.error("Failed to generate Solfeggio tone snippet.")
 
     def _render_isochronic_generator(self, disabled: bool = False):
-        """Renders UI for generating Isochronic Tones (Advanced Mode)."""
-        st.markdown("<small>Generates rhythmic pulses of a single tone (headphones not required).</small>", unsafe_allow_html=True)
+        st.markdown("<small>Generates rhythmic pulses of a single tone.</small>", unsafe_allow_html=True)
         iso_cols = st.columns(2)
         with iso_cols[0]:
-            iso_duration_req = st.number_input(
-                "Target Duration (s)##Iso", 10, 7200, 300, 10, key="sidebar_iso_duration", help="Length in seconds. Tone will loop.", disabled=disabled
-            )
-            iso_carrier = st.number_input(
-                "Carrier Freq (Hz)", 20.0, 1000.0, 150.0, 0.1, format="%.1f", key="sidebar_iso_carrier", help="The base tone frequency being pulsed.", disabled=disabled
-            )
+            iso_duration_req = st.number_input("Target Duration (s)##Iso", 10, 7200, 300, 10, key="sidebar_iso_duration", help="Length. Tone will loop.", disabled=disabled)
+            iso_carrier = st.number_input("Carrier Freq (Hz)", 20.0, 1000.0, 150.0, 0.1, format="%.1f", key="sidebar_iso_carrier", help="Base tone frequency.", disabled=disabled)
         with iso_cols[1]:
             iso_initial_vol = st.slider("Initial Volume##Iso", 0.0, 1.0, 0.4, 0.05, key="sidebar_iso_volume", help="Initial loudness.", disabled=disabled)
-            iso_pulse = st.number_input(
-                "Pulse Freq (Hz)",
-                0.1,
-                40.0,
-                10.0,
-                0.1,
-                format="%.1f",
-                key="sidebar_iso_pulse",
-                help="How many times per second the tone pulses (e.g., 10Hz for Alpha).",
-                disabled=disabled,
-            )
-
-        if st.button("Generate Isochronic Track", key="sidebar_generate_iso", help="Create track with these settings.", disabled=disabled):
+            iso_pulse = st.number_input("Pulse Freq (Hz)", 0.1, 40.0, 10.0, 0.1, format="%.1f", key="sidebar_iso_pulse", help="Pulses per second.", disabled=disabled)
+        if st.button("Generate Isochronic Track", key="sidebar_generate_iso", help="Create track.", disabled=disabled):
             if not self._check_track_limit(adding_count=1):
                 return
             with st.spinner("Generating Isochronic Tones snippet..."):

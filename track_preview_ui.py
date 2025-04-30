@@ -11,14 +11,22 @@ import numpy as np
 import streamlit as st
 
 # Import necessary components from other modules
-# <<< Updated AppState import >>>
 from app_state import AppState, TrackDataDict, TrackID
 from audio_io import save_audio_to_temp_file
-from audio_processing import AudioData, get_preview_audio
+
+# <<< MODIFIED: Import from audio_preview >>>
+from audio_preview import get_preview_audio
+
+# <<< Type hint for AudioData >>>
+try:
+    from audio_effects_pipeline import AudioData
+except ImportError:
+    AudioData = np.ndarray  # Fallback
+
 from config import (
     GLOBAL_SR,
     PREVIEW_DURATION_S,
-    TRACK_TYPE_AFFIRMATION,  # Needed for subliminalize button
+    TRACK_TYPE_AFFIRMATION,
     ULTRASONIC_TARGET_FREQ,
 )
 
@@ -30,12 +38,11 @@ try:
 except ImportError:
     STREAMLIT_ADVANCED_AUDIO_AVAILABLE = False
 
-    # Define dummy functions if library is missing
     def WaveSurferOptions(**kwargs):
         return None
 
     def audix(*args, **kwargs):
-        pass  # Dummy function
+        pass
 
 
 logger = logging.getLogger(__name__)
@@ -45,20 +52,13 @@ class TrackPreviewUI:
     """Handles rendering the main preview and controls column for a track."""
 
     def __init__(self, app_state: AppState):
-        """
-        Initializes the TrackPreviewUI.
-
-        Args:
-            app_state: An instance of the AppState class.
-        """
+        """Initializes the TrackPreviewUI."""
         self.app_state = app_state
         logger.debug("TrackPreviewUI initialized.")
 
-    # <<< MODIFIED: Hash based on snippet size/presence >>>
     def _calculate_preview_hash(self, track_data: TrackDataDict) -> int:
         """Calculates a hash based on settings relevant to the audio preview."""
         audio_snippet = track_data.get("audio_snippet")
-        # Hash relevant settings + snippet info (size as a proxy for content change)
         params_to_hash = (
             track_data.get("volume", 1.0),
             track_data.get("speed_factor", 1.0),
@@ -68,48 +68,37 @@ class TrackPreviewUI:
             track_data.get("filter_cutoff", 8000.0),
             track_data.get("reverse_audio", False),
             track_data.get("ultrasonic_shift", False),
-            # Use snippet size instead of original_audio size
             audio_snippet.size if audio_snippet is not None else 0,
             track_data.get("sr", GLOBAL_SR),
-            # Include loop setting as it affects preview generation
             track_data.get("loop_to_fit", False),
         )
-        settings_hash = hash(params_to_hash)
-        return settings_hash
+        return hash(params_to_hash)
 
-    # <<< MODIFIED: Use audio_snippet >>>
     def render_preview_column(self, track_id: TrackID, track_data: TrackDataDict, column: st.delta_generator.DeltaGenerator):
         """Renders the main controls for a single track (waveform, settings, preview button)."""
         with column:
             try:
-                # <<< Get audio_snippet instead of original_audio >>>
                 audio_snippet = track_data.get("audio_snippet")
                 track_sr = track_data.get("sr", GLOBAL_SR)
                 app_mode = st.session_state.get("app_mode", "Easy")
-                source_info = track_data.get("source_info")  # Get source info for context
+                source_info = track_data.get("source_info")
 
-                # --- Waveform Preview Display ---
                 st.markdown("**Preview (First 60s with Effects Applied)**")
                 display_path = None
                 preview_cache_hit = False
 
-                # <<< Check if audio_snippet exists >>>
                 if audio_snippet is not None and audio_snippet.size > 0:
                     current_settings_hash = self._calculate_preview_hash(track_data)
                     stored_hash = track_data.get("preview_settings_hash")
                     stored_path = track_data.get("preview_temp_file_path")
-
-                    # Check if cached preview is valid
                     if stored_hash is not None and current_settings_hash == stored_hash and stored_path and isinstance(stored_path, str) and os.path.exists(stored_path):
                         display_path = stored_path
                         preview_cache_hit = True
-                    # Clean up if path exists in state but file doesn't
                     elif stored_path and isinstance(stored_path, str) and not os.path.exists(stored_path):
                         logger.warning(f"Cached preview file missing for track {track_id}: {stored_path}. Clearing path.")
                         self.app_state.update_track_param(track_id, "preview_temp_file_path", None)
                         self.app_state.update_track_param(track_id, "preview_settings_hash", None)
 
-                    # --- Display Logic ---
                     if display_path:
                         if STREAMLIT_ADVANCED_AUDIO_AVAILABLE:
                             ws_options = WaveSurferOptions(
@@ -121,20 +110,18 @@ class TrackPreviewUI:
                                 audix(data=display_path, sample_rate=track_sr, wavesurfer_options=ws_options, key=audix_key)
                             except Exception as audix_err:
                                 logger.error(f"Error rendering audix waveform for {track_id}: {audix_err}")
-                                st.warning("Waveform preview failed to render. Showing standard audio player instead.")
+                                st.warning("Waveform preview failed. Showing standard player.")
                                 try:
                                     st.audio(display_path, format="audio/wav")
                                 except Exception as audio_err:
-                                    logger.error(f"Fallback st.audio player also failed for {track_id}: {audio_err}")
+                                    logger.error(f"Fallback st.audio player failed for {track_id}: {audio_err}")
                                     st.error("Could not display audio preview.")
                         else:
                             st.audio(display_path, format="audio/wav")
                     elif not preview_cache_hit:
-                        st.info("Settings changed or preview not generated. Click 'Update Preview' below.")
-
-                else:  # No audio snippet data
+                        st.info("Settings changed or preview not generated. Click 'Update Preview'.")
+                else:
                     if source_info and source_info.get("type") == "upload":
-                        # Check if the temporary file path exists in source_info
                         temp_file_path = source_info.get("temp_file_path")
                         original_filename = source_info.get("original_filename", "N/A")
                         if temp_file_path and os.path.exists(temp_file_path):
@@ -142,15 +129,13 @@ class TrackPreviewUI:
                         else:
                             st.error(f"Source file missing for '{original_filename}'. Please remove and re-add the track.", icon="❌")
                     else:
-                        st.warning("Track currently has no audio snippet data. Try 'Update Preview'.")
+                        st.warning("Track has no audio snippet. Try 'Update Preview'.")
 
-                # Display track info (Show snippet duration)
                 snippet_len_samples = len(audio_snippet) if audio_snippet is not None else 0
                 snippet_len_sec = snippet_len_samples / track_sr if track_sr > 0 else 0
                 st.caption(f"Snippet Duration: {snippet_len_sec:.2f}s | SR: {track_sr} Hz")
                 st.markdown("---")
 
-                # --- Basic Settings (Volume, Pan) ---
                 st.markdown("**Track Settings**")
                 basic_cols = st.columns(2)
                 with basic_cols[0]:
@@ -162,7 +147,6 @@ class TrackPreviewUI:
                     if not np.isclose(pan, track_data.get("pan", 0.0)):
                         self.app_state.update_track_param(track_id, "pan", pan)
 
-                # --- Subliminalize Preset Button ---
                 if track_data.get("track_type") == TRACK_TYPE_AFFIRMATION:
                     if st.button("⚡ Quick Subliminal Settings", key=f"subliminalize_preset_{track_id}", help="Applies Speed=10x, Volume=0.05."):
                         logger.info(f"Subliminalize preset applied to track {track_id}")
@@ -171,11 +155,9 @@ class TrackPreviewUI:
                         st.toast("Speed set to 10x, Volume to 0.05. Click 'Update Preview'.", icon="⚡")
                         st.rerun()
 
-                # --- Advanced Settings (Conditional on App Mode) ---
                 if app_mode == "Advanced":
                     st.markdown("**Advanced Effects**")
                     st.caption("Adjust speed, pitch, filter, etc. Click 'Update Preview' after changes.")
-
                     ultrasonic_enabled = track_data.get("ultrasonic_shift", False)
                     ultrasonic_checkbox = st.checkbox(
                         "🔊 Ultrasonic Shift ('Silent')",
@@ -186,7 +168,6 @@ class TrackPreviewUI:
                     if ultrasonic_checkbox != ultrasonic_enabled:
                         self.app_state.update_track_param(track_id, "ultrasonic_shift", ultrasonic_checkbox)
                         st.rerun()
-
                     col_fx1_1, col_fx1_2, col_fx1_3 = st.columns([0.6, 1, 1])
                     with col_fx1_1:
                         st.markdown("<br/>", unsafe_allow_html=True)
@@ -197,12 +178,10 @@ class TrackPreviewUI:
                         reverse_value = st.checkbox("🔄 Reverse", value=track_data.get("reverse_audio", False), key=f"reverse_{track_id}", help="Reverse audio playback?")
                         if reverse_value != track_data.get("reverse_audio"):
                             self.app_state.update_track_param(track_id, "reverse_audio", reverse_value)
-
                     with col_fx1_2:
                         speed = st.slider("Speed", 0.1, 16.0, float(track_data.get("speed_factor", 1.0)), 0.05, key=f"speed_{track_id}", help="Playback speed factor.")
                         if not np.isclose(speed, track_data.get("speed_factor", 1.0)):
                             self.app_state.update_track_param(track_id, "speed_factor", speed)
-
                     with col_fx1_3:
                         pitch_disabled = track_data.get("ultrasonic_shift", False)
                         pitch = st.slider(
@@ -217,7 +196,6 @@ class TrackPreviewUI:
                         )
                         if not pitch_disabled and pitch != track_data.get("pitch_shift", 0):
                             self.app_state.update_track_param(track_id, "pitch_shift", float(pitch))
-
                     col_fx2_1, col_fx2_2 = st.columns(2)
                     with col_fx2_1:
                         filter_disabled = track_data.get("ultrasonic_shift", False)
@@ -238,7 +216,6 @@ class TrackPreviewUI:
                         if not filter_disabled and f_type != current_filter_type:
                             self.app_state.update_track_param(track_id, "filter_type", f_type)
                             st.rerun()
-
                     with col_fx2_2:
                         filter_type_active = track_data.get("filter_type", "off") != "off"
                         cutoff_disabled = filter_disabled or not filter_type_active
@@ -259,9 +236,7 @@ class TrackPreviewUI:
                         if not cutoff_disabled and not np.isclose(f_cutoff_clamped, track_data.get("filter_cutoff", 8000.0)):
                             self.app_state.update_track_param(track_id, "filter_cutoff", f_cutoff_clamped)
 
-                # --- Update Preview Button ---
                 st.markdown("---")
-                # <<< Disable button if audio_snippet is missing >>>
                 update_disabled = audio_snippet is None or audio_snippet.size == 0
                 if st.button(
                     "⚙️ Update Preview",
@@ -270,13 +245,12 @@ class TrackPreviewUI:
                     disabled=update_disabled,
                     use_container_width=True,
                 ):
-                    self._handle_update_preview(track_id, track_data)  # Call helper method
+                    self._handle_update_preview(track_id, track_data)
 
             except Exception as e:
                 logger.exception(f"Error rendering preview column for track {track_id}")
                 st.error(f"An error occurred displaying controls for this track: {e}")
 
-    # <<< Helper method for handling preview generation >>>
     def _handle_update_preview(self, track_id: TrackID, track_data: TrackDataDict):
         """Handles the logic when 'Update Preview' is clicked."""
         logger.info(f"Update Preview clicked for: '{track_data.get('name', 'N/A')}' ({track_id})")
@@ -290,9 +264,7 @@ class TrackPreviewUI:
 
         with st.spinner("Generating preview audio..."):
             try:
-                # <<< Pass audio_snippet to get_preview_audio >>>
-                # get_preview_audio needs to be adapted to accept snippet instead of full track_data if necessary
-                # Assuming get_preview_audio primarily needs the snippet and other params from track_data
+                # Pass track_data which contains snippet and params
                 preview_audio = get_preview_audio(track_data, preview_duration_s=PREVIEW_DURATION_S)
 
                 if preview_audio is not None and preview_audio.size > 0:
@@ -300,11 +272,9 @@ class TrackPreviewUI:
                     if new_preview_path:
                         old_preview_path = track_data.get("preview_temp_file_path")
                         new_settings_hash = self._calculate_preview_hash(track_data)
-                        # Update state with new path and hash
                         self.app_state.update_track_param(track_id, "preview_temp_file_path", new_preview_path)
                         self.app_state.update_track_param(track_id, "preview_settings_hash", new_settings_hash)
-                        self.app_state.increment_update_counter(track_id)  # Force audix refresh
-                        # Clean up old preview file
+                        self.app_state.increment_update_counter(track_id)
                         if old_preview_path and isinstance(old_preview_path, str) and old_preview_path != new_preview_path and os.path.exists(old_preview_path):
                             try:
                                 os.remove(old_preview_path)

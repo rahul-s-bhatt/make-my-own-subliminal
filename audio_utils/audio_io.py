@@ -53,9 +53,7 @@ def load_audio(
             - The sample rate of the loaded audio (target_sr if resampling occurred,
               original SR otherwise), or None on failure.
     """
-    logger.info(
-        f"Loading audio from source type: {type(file_source)}, Target SR: {target_sr}, Duration: {duration}s"
-    )
+    logger.info(f"Loading audio from source type: {type(file_source)}, Target SR: {target_sr}, Duration: {duration}s")
     try:
         # Load audio using librosa
         # sr=None preserves original sample rate, mono=False loads all channels
@@ -73,19 +71,11 @@ def load_audio(
         elif audio.shape[0] == 2 and audio.shape[1] > 2:
             # If shape is (2, samples), transpose to (samples, 2)
             audio = audio.T
-        elif (
-            audio.ndim > 1 and audio.shape[0] > 2
-        ):  # Check if first dimension is channels > 2
-            logger.warning(
-                f"Audio has more than 2 channels ({audio.shape[0]}). Using only the first two."
-            )
+        elif audio.ndim > 1 and audio.shape[0] > 2:  # Check if first dimension is channels > 2
+            logger.warning(f"Audio has more than 2 channels ({audio.shape[0]}). Using only the first two.")
             audio = audio[:2, :].T  # Take first 2 channels and transpose
-        elif (
-            audio.ndim > 1 and audio.shape[1] > 2
-        ):  # Check if second dimension is channels > 2 (already transposed?)
-            logger.warning(
-                f"Audio has more than 2 channels ({audio.shape[1]}). Using only the first two."
-            )
+        elif audio.ndim > 1 and audio.shape[1] > 2:  # Check if second dimension is channels > 2 (already transposed?)
+            logger.warning(f"Audio has more than 2 channels ({audio.shape[1]}). Using only the first two.")
             audio = audio[:, :2]  # Take first 2 channels
         elif audio.ndim > 1 and audio.shape[1] == 1:
             # If shape is (samples, 1), duplicate channel
@@ -95,9 +85,7 @@ def load_audio(
         elif audio.ndim == 2 and audio.shape[1] == 2:
             logger.debug("Audio is already in desired stereo format (samples, 2).")
         else:
-            logger.warning(
-                f"Unexpected audio shape {audio.shape}. Attempting to proceed, but might cause issues."
-            )
+            logger.warning(f"Unexpected audio shape {audio.shape}. Attempting to proceed, but might cause issues.")
 
         # --- Resample if Necessary and target_sr is specified ---
         output_sr = sr  # Start with original SR
@@ -108,27 +96,19 @@ def load_audio(
                 # Librosa expects (channels, samples) for resample, so transpose
                 audio_float = audio.astype(np.float32)
                 # Handle potential shape issues before transposing
-                if (
-                    audio_float.ndim == 1
-                ):  # Should have been converted to stereo already, but double-check
+                if audio_float.ndim == 1:  # Should have been converted to stereo already, but double-check
                     audio_float = np.stack([audio_float, audio_float], axis=-1)
 
                 if audio_float.shape[1] != 2:  # If still not (samples, 2) after checks
-                    logger.error(
-                        f"Cannot resample, unexpected audio shape after stereo conversion: {audio_float.shape}"
-                    )
+                    logger.error(f"Cannot resample, unexpected audio shape after stereo conversion: {audio_float.shape}")
                     return None, None  # Indicate failure
 
-                audio_resampled = librosa.resample(
-                    audio_float.T, orig_sr=sr, target_sr=target_sr
-                )
+                audio_resampled = librosa.resample(audio_float.T, orig_sr=sr, target_sr=target_sr)
                 # Transpose back to (samples, channels)
                 audio = audio_resampled.T
                 output_sr = target_sr  # Update the output SR
             else:
-                logger.warning(
-                    "Audio data is empty, cannot resample. Original SR was {sr}Hz."
-                )
+                logger.warning("Audio data is empty, cannot resample. Original SR was {sr}Hz.")
                 output_sr = target_sr  # Return target SR even if empty
 
         # Ensure final output is float32
@@ -154,26 +134,54 @@ def save_audio_to_bytesio(audio: AudioData, sr: SampleRate) -> BytesIO:
         A BytesIO object containing the WAV audio data. Returns empty buffer on failure.
     """
     buffer = BytesIO()
-    logger.debug(f"Saving audio ({audio.shape}, {sr}Hz) to BytesIO buffer.")
+    logger.debug(f"Attempting to save audio (dtype: {audio.dtype}, shape: {audio.shape}, sr: {sr}Hz) to BytesIO buffer.")
+
     if audio is None or audio.size == 0:
         logger.warning("Attempted to save empty audio data to BytesIO.")
         return buffer  # Return empty buffer
 
     try:
+        # --- Start: Added Robustness Checks ---
+        # 1. Ensure input is numpy array
+        if not isinstance(audio, np.ndarray):
+            logger.error(f"Input audio is not a numpy array, but {type(audio)}. Cannot save.")
+            return buffer
+        # 2. Ensure float type before clipping/scaling (convert if necessary)
+        if not np.issubdtype(audio.dtype, np.floating):
+            logger.warning(f"Input audio dtype is {audio.dtype}, not float. Attempting conversion to float32.")
+            try:
+                audio = audio.astype(np.float32)
+            except Exception as e_conv:
+                logger.error(f"Failed to convert audio to float32: {e_conv}")
+                return buffer
+        # 3. Ensure shape is (samples, channels) - Assuming stereo (2 channels) based on prior logic
+        if audio.ndim == 1:
+            logger.warning("Input audio is mono (1D). Converting to stereo for WAV save.")
+            audio = np.stack([audio, audio], axis=-1)
+        elif audio.ndim != 2 or audio.shape[1] != 2:
+            logger.error(f"Input audio has unexpected shape {audio.shape}. Expected (samples, 2). Cannot save.")
+            return buffer
+        # --- End: Added Robustness Checks ---
+
         # Ensure audio is within [-1.0, 1.0] before converting to int16
+        # Clipping should happen *after* ensuring it's float
+        logger.debug("Clipping audio data to [-1.0, 1.0].")
         audio_clipped = np.clip(audio, -1.0, 1.0)
+
         # Convert float32 [-1.0, 1.0] to int16 [-32768, 32767]
+        logger.debug("Converting audio data to int16.")
         audio_int16 = (audio_clipped * 32767).astype(np.int16)
+        logger.debug(f"Audio data prepared for writing (dtype: {audio_int16.dtype}, shape: {audio_int16.shape}).")
 
         # Write to the buffer using soundfile
+        logger.debug("Writing audio data to buffer using soundfile...")
         sf.write(buffer, audio_int16, sr, format="WAV", subtype="PCM_16")
         buffer.seek(0)  # Rewind the buffer to the beginning for reading
-        logger.debug("Audio successfully saved to BytesIO buffer.")
+        logger.info("Audio successfully saved to BytesIO buffer.")
 
     except Exception as e:
-        logger.exception("Error saving audio to BytesIO buffer.")
-        # Removed direct Streamlit call. Log the error.
-        # st.error(f"Error saving audio: {e}")
+        # Log the specific exception that occurred during the write process
+        logger.exception(f"Error saving audio to BytesIO buffer during sf.write or conversion: {e}")
         # Return an empty buffer in case of error
         buffer = BytesIO()
 
@@ -199,6 +207,25 @@ def save_audio_to_temp_file(audio: AudioData, sr: SampleRate) -> str | None:
         return None
 
     try:
+        # --- Replicate robustness checks from BytesIO version ---
+        if not isinstance(audio, np.ndarray):
+            logger.error(f"Input audio is not a numpy array (type: {type(audio)}) for temp file save.")
+            return None
+        if not np.issubdtype(audio.dtype, np.floating):
+            logger.warning(f"Input audio dtype {audio.dtype} is not float for temp file save. Converting.")
+            try:
+                audio = audio.astype(np.float32)
+            except Exception as e_conv:
+                logger.error(f"Failed to convert audio to float32 for temp file save: {e_conv}")
+                return None
+        if audio.ndim == 1:
+            logger.warning("Input audio is mono (1D) for temp file save. Converting to stereo.")
+            audio = np.stack([audio, audio], axis=-1)
+        elif audio.ndim != 2 or audio.shape[1] != 2:
+            logger.error(f"Input audio has unexpected shape {audio.shape} for temp file save. Expected (samples, 2).")
+            return None
+        # --- End robustness checks ---
+
         # Ensure audio is within [-1.0, 1.0] before converting to int16
         audio_clipped = np.clip(audio, -1.0, 1.0)
         audio_int16 = (audio_clipped * 32767).astype(np.int16)
@@ -219,11 +246,7 @@ def save_audio_to_temp_file(audio: AudioData, sr: SampleRate) -> str | None:
         if temp_file_path and os.path.exists(temp_file_path):
             try:
                 os.remove(temp_file_path)
-                logger.debug(
-                    f"Cleaned up partially created temp file: {temp_file_path}"
-                )
+                logger.debug(f"Cleaned up partially created temp file: {temp_file_path}")
             except OSError as e_os:
-                logger.warning(
-                    f"Failed to clean up partial temp file {temp_file_path}: {e_os}"
-                )
+                logger.warning(f"Failed to clean up partial temp file {temp_file_path}: {e_os}")
         return None

@@ -1,40 +1,206 @@
+# Project Metadata: MindMorph Subliminal Editor
+
+## Folder Structure
+
 your_project_root_directory/
 │
-├── assets/
+├── assets/                 # Static assets (images)
 │   ├── favico.png
 │   └── logo.png
 │
-├── wizard_steps/
+├── wizard_steps/           # UI components for Quick Create Wizard steps
 │   ├── __init__.py
 │   ├── step_1_affirmations.py
 │   ├── step_2_background.py
 │   ├── step_3_frequency.py
 │   └── step_4_export.py
 │
-├── main.py
-├── config.py
-├── app_state.py                 # Focuses on state dict management
-├── audio_state_definitions.py # NEW: Holds TypeDicts, type aliases
-├── audio_loader.py            # NEW: Handles loading/regenerating full audio
-├── ui_manager.py
-├── sidebar_manager.py
-├── sidebar_uploader.py
-├── sidebar_generators.py
-├── track_editor_manager.py
-├── track_preview_ui.py
-├── track_metadata_ui.py
-├── audio_io.py
-├── audio_effects.py
-├── audio_effects_pipeline.py  # NEW: Applies sequence of effects
-├── audio_preview.py           # NEW: Generates track previews
-├── audio_mixers.py            # NEW: Contains mix_tracks & mix_wizard_tracks
-├── audio_generators.py
-├── tts_generator.py
-├── utils.py
-├── wizard_state.py
-├── quick_wizard.py
-├── project_handler.py         # Handles loading (Save/Load UI currently removed)
+├── main.py                 # Main application entry point and router
+├── config.py               # Configuration constants and settings
+├── app_state.py            # Core application state management (tracks)
+├── audio_state_definitions.py # TypedDicts and type aliases for audio/state data
+├── audio_loader.py         # Handles loading/regenerating full audio from source_info
+├── ui_manager.py           # Orchestrates the main UI (sidebar, editor, master controls)
+├── sidebar_manager.py      # Manages sidebar layout and sub-components
+├── sidebar_uploader.py     # Handles sidebar file uploads and TTS input UI
+├── sidebar_generators.py   # Handles sidebar noise/frequency generation UI
+├── track_editor_manager.py # Manages the main track editing panel layout
+├── track_preview_ui.py     # Handles UI for individual track preview/waveform and basic controls
+├── track_metadata_ui.py    # Handles UI for individual track metadata (name, type, mute, solo, delete)
+├── audio_io.py             # Audio file loading (load_audio) and saving (save_audio_to_bytesio, save_audio_to_temp_file)
+├── audio_effects.py        # Individual audio effect functions (apply_reverse, apply_speed_change, etc.)
+├── audio_effects_pipeline.py # Applies sequences of effects (apply_all_effects)
+├── audio_preview.py        # Generates audio snippets for track previews (get_preview_audio)
+├── audio_mixers.py         # Mixes tracks for Advanced Editor (mix_tracks) and Wizard (mix_wizard_tracks)
+├── audio_generators.py     # Generates audio signals (tones, noise)
+├── tts_generator.py        # Text-to-Speech generation class
+├── utils.py                # Utility functions (logging setup, text file reading)
+├── wizard_state.py         # Session state management specific to the Quick Wizard
+├── quick_wizard.py         # Orchestrator class for the Quick Create Wizard workflow
+├── project_handler.py      # Handles loading project files (Save functionality removed)
+├── affirmation_expander.py # Logic for expanding affirmation text
 │
-├── requirements.txt
-├── editor_oop.log
+├── requirements.txt        # Python package dependencies
+├── editor_oop.log          # Log file
 └── (Other files like README.md, .gitignore, etc.)
+
+---
+
+## File Contents Overview (Classes & Major Functions)
+
+**`main.py`**
+  - `reset_advanced_editor_state()`: Clears advanced editor session state.
+  - `main()`: Main application function, handles workflow routing (selection screen, wizard, advanced).
+
+**`config.py`**
+  - (Constants defined, e.g., `GLOBAL_SR`, `MAX_TRACK_LIMIT`, `MAX_AFFIRMATION_CHARS`, `MAX_UPLOAD_SIZE_BYTES`, `TRACK_TYPES`)
+  - `get_default_track_params()`: Returns default track settings dict (potentially obsolete).
+
+**`app_state.py`**
+  - `AppState`: Class for managing track data in `st.session_state`.
+    - `__init__()`
+    - `_validate_and_clean_state()`
+    - `_get_tracks_dict()`
+    - `get_all_tracks()`
+    - `get_track()`
+    - `get_track_snippet()`
+    - `add_track()`
+    - `delete_track()`
+    - `update_track_param()`
+    - `increment_update_counter()`
+    - `get_loaded_track_names()`
+    - `clear_all_tracks()`
+
+**`audio_state_definitions.py`**
+  - (Type Aliases: `TrackID`, `AudioData`, `TrackType`, `SampleRate`)
+  - (TypedDicts: `SourceInfoUpload`, `SourceInfoTTS`, `SourceInfoNoise`, `SourceInfoFrequency`, `TrackDataDict`)
+  - (Union Type: `SourceInfo`)
+
+**`audio_loader.py`**
+  - `load_or_regenerate_audio()`: Loads/regenerates full audio based on `source_info`.
+
+**`ui_manager.py`**
+  - `UIManager`: Class orchestrating the main UI.
+    - `__init__()`
+    - `render_ui()`: Renders sidebar, editor, master controls based on mode.
+    - `render_master_controls()`: Renders export/preview buttons, filename input.
+    - `_clear_export_buffer()`: Clears export state.
+    - `_handle_preview_click()`: Generates master mix preview.
+    - `_handle_export_click()`: Generates full mix export, triggers GA event.
+    - `render_preview_audio_player()`: Displays master preview audio.
+    - `render_instructions()`: Renders help expander.
+
+**`sidebar_manager.py`**
+  - `SidebarManager`: Class managing sidebar content.
+    - `__init__()`
+    - `render_sidebar()`: Renders logo, uploader, generators, feedback button.
+
+**`sidebar_uploader.py`**
+  - `SidebarUploader`: Class for sidebar upload/TTS sections.
+    - `__init__()`
+    - `_check_track_limit()`
+    - `_handle_audio_upload()`: Callback for audio file uploader.
+    - `render_uploader()`: Renders audio file uploader UI.
+    - `render_affirmation_inputs()`: Renders TTS/file affirmation input UI (including expansion/undo).
+    - `_generate_tts_track()`: Helper to generate TTS track and add to state.
+
+**`sidebar_generators.py`**
+  - `SidebarGenerators`: Class for sidebar frequency/noise generation.
+    - `__init__()`
+    - `_check_track_limit()`
+    - `render_frequency_generators()`: Renders frequency UI based on mode.
+    - `render_background_generators()`: Renders noise generation UI.
+    - `_render_frequency_presets()`
+    - `_render_binaural_generator()`
+    - `_render_solfeggio_generator()`
+    - `_render_isochronic_generator()`
+
+**`track_editor_manager.py`**
+  - `TrackEditorManager`: Class managing the track editor panel.
+    - `__init__()`
+    - `render_tracks_editor()`: Renders empty state or iterates through tracks, displaying controls via sub-components.
+
+**`track_preview_ui.py`**
+  - `TrackPreviewUI`: Class for track preview column UI.
+    - `__init__()`
+    - `_calculate_preview_hash()`: Creates hash for preview caching.
+    - `render_preview_column()`: Renders waveform, basic controls (vol, pan), advanced effects (speed, pitch, filter, etc.), update button.
+    - `_handle_update_preview()`: Generates/updates the individual track preview audio file.
+
+**`track_metadata_ui.py`**
+  - `TrackMetadataUI`: Class for track metadata column UI.
+    - `__init__()`
+    - `render_metadata_column()`: Renders name, type, mute, solo, delete controls.
+
+**`audio_io.py`**
+  - `load_audio()`: Loads audio from file/buffer, resamples, handles channels.
+  - `save_audio_to_bytesio()`: Saves audio data to BytesIO buffer (WAV).
+  - `save_audio_to_temp_file()`: Saves audio data to temporary file (WAV).
+
+**`audio_effects.py`**
+  - `apply_reverse()`
+  - `apply_speed_change()`
+  - `apply_pitch_shift()`
+  - `apply_ultrasonic_shift()`
+  - `apply_standard_filter()`
+
+**`audio_effects_pipeline.py`**
+  - `apply_all_effects()`: Applies effects sequence to an audio segment.
+
+**`audio_preview.py`**
+  - `get_preview_audio()`: Generates preview audio snippet with effects applied.
+
+**`audio_mixers.py`**
+  - `mix_tracks()`: Mixes tracks for the Advanced Editor (handles preview/export, looping).
+  - `mix_wizard_tracks()`: Mixes tracks specifically for the Quick Wizard.
+
+**`audio_generators.py`**
+  - `generate_binaural_beats()`
+  - `generate_solfeggio_frequency()`
+  - `generate_isochronic_tones()`
+  - `generate_white_noise()`
+  - `generate_pink_noise()`
+  - `generate_brown_noise()`
+  - `generate_noise()`: Main function calling specific noise generators.
+
+**`tts_generator.py`**
+  - `TTSGenerator`: Class for TTS.
+    - `__init__()`
+    - `_init_engine()`
+    - `_synthesize_chunk()`
+    - `_load_and_resample_chunk()`
+    - `generate()`: Main TTS generation method, handles chunking.
+
+**`utils.py`**
+  - `setup_logging()`: Configures application logging.
+  - `read_text_file()`: Reads text from .txt or .docx files.
+
+**`wizard_state.py`**
+  - `initialize_wizard_state()`: Sets default session state for wizard.
+  - `reset_wizard_state()`: Clears wizard session state.
+
+**`quick_wizard.py`**
+  - `QuickWizard`: Class orchestrating the wizard workflow.
+    - `__init__()`
+    - (State Sync Callbacks: `sync_affirmation_text`, `clear_affirmation_upload_state`, etc. - *Note: Some might be implicitly handled by widget keys now*)
+    - `_reset_wizard_state()`
+    - `_go_to_step()`
+    - `_process_and_export()`: Handles final wizard mixing and export buffer creation.
+    - `render_wizard()`: Renders the current wizard step UI.
+
+**`project_handler.py`**
+  - `ProjectHandler`: Class for loading project files.
+    - `__init__()`
+    - `load_project()`: Handles parsing uploaded project file and reconstructing state.
+
+**`affirmation_expander.py`**
+  - `_format_affirmation()`: Helper to format expanded affirmation.
+  - `_expand_affirmation_single()`: Expands a single base affirmation line.
+  - `expand_affirmations()`: Main function to expand multi-line text, handle limits, and truncation.
+
+**`wizard_steps/`**
+  - `step_1_affirmations.py`: `render_step_1()`
+  - `step_2_background.py`: `render_step_2()`
+  - `step_3_frequency.py`: `render_step_3()`
+  - `step_4_export.py`: `render_step_4()`
+

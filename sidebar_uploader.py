@@ -18,8 +18,11 @@ from audio_state_definitions import AudioData, SourceInfoTTS, SourceInfoUpload, 
 from config import (
     GLOBAL_SR,
     MAX_AFFIRMATION_CHARS,
-    MAX_AUDIO_DURATION_S,
+    MAX_AUDIO_DURATION_S,  # Used for UI hint
     MAX_TRACK_LIMIT,
+    MAX_UPLOAD_SIZE_BYTES,
+    # <<< MODIFIED: Import upload size limits from config >>>
+    MAX_UPLOAD_SIZE_MB,
     TRACK_SNIPPET_DURATION_S,
     TRACK_TYPE_AFFIRMATION,
     TRACK_TYPE_BACKGROUND,
@@ -32,9 +35,9 @@ from utils import read_text_file
 # Get a logger for this module
 logger = logging.getLogger(__name__)
 
-# Define the new maximum file size in bytes (15 MB)
-MAX_UPLOAD_SIZE_MB = 15
-MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+# <<< REMOVED: Definition of upload size limits moved to config.py >>>
+# MAX_UPLOAD_SIZE_MB = 15
+# MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
 
 class SidebarUploader:
@@ -92,8 +95,10 @@ class SidebarUploader:
                 break  # Stop if limit reached mid-batch
 
             logger.info(f"Processing uploaded file via callback: {file.name} (Size: {file.size} bytes)")
+            # <<< MODIFIED: Uses constant imported from config >>>
             if file.size > MAX_UPLOAD_SIZE_BYTES:
                 logger.warning(f"Upload '{file.name}' rejected: Size exceeds limit.")
+                # <<< MODIFIED: Uses constant imported from config >>>
                 st.error(f"❌ File '{file.name}' ({file.size / (1024 * 1024):.1f} MB) exceeds the {MAX_UPLOAD_SIZE_MB} MB limit.")
                 files_skipped_or_failed += 1
                 continue
@@ -156,9 +161,6 @@ class SidebarUploader:
                         logger.warning(f"Failed cleanup temp file {temp_file_path} for empty audio.")
                 files_skipped_or_failed += 1
 
-        # <<< REMOVED line that caused the error >>>
-        # st.session_state[self.audio_uploader_key] = [] # DO NOT DO THIS
-
         # Log summary
         if files_processed_successfully:
             logger.debug(f"Audio upload callback finished. Processed successfully: {len(files_to_process) - files_skipped_or_failed}, Skipped/Failed: {files_skipped_or_failed}")
@@ -174,6 +176,7 @@ class SidebarUploader:
     def render_uploader(self):
         """Renders the audio file uploader component in the sidebar."""
         st.subheader("📁 Upload Audio File(s)")
+        # <<< MODIFIED: Uses constants imported from config >>>
         st.caption(f"Upload music, voice, etc. (Max duration: {MAX_AUDIO_DURATION_S // 60} min approx, Max size: {MAX_UPLOAD_SIZE_MB} MB)")
         limit_reached = len(self.app_state.get_all_tracks()) >= MAX_TRACK_LIMIT
         if limit_reached:
@@ -184,6 +187,7 @@ class SidebarUploader:
             accept_multiple_files=True,
             key=self.audio_uploader_key,
             label_visibility="collapsed",
+            # <<< MODIFIED: Uses constant imported from config >>>
             help=f"Select WAV/MP3 files (Max {MAX_UPLOAD_SIZE_MB}MB each). Limit: {MAX_TRACK_LIMIT} tracks total.",
             on_change=self._handle_audio_upload,
             disabled=limit_reached,

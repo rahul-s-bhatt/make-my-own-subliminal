@@ -28,10 +28,13 @@ GENERATOR_SNIPPET_DURATION_S: int = 10  # Duration (in seconds) for generated no
 TTS_CHUNK_SIZE: int = 1500  # Max characters per chunk for TTS generation
 
 # --- Resource Limits ---
-MAX_AUDIO_DURATION_S: int = 300  # 5 minutes max for uploaded/generated audio
+MAX_AUDIO_DURATION_S: int = 300  # 5 minutes max for uploaded/generated audio (UI Hint)
 MAX_AFFIRMATION_CHARS: int = 5000  # Max characters for TTS input
-# <<< ADDED: Maximum number of tracks allowed >>>
 MAX_TRACK_LIMIT: int = 5  # Maximum number of tracks allowed in the Advanced Editor
+# <<< ADDED: Maximum upload file size configuration >>>
+MAX_UPLOAD_SIZE_MB: int = 15  # Maximum size for uploaded files in Megabytes
+MAX_UPLOAD_SIZE_BYTES: int = MAX_UPLOAD_SIZE_MB * 1024 * 1024  # Calculated size in bytes
+
 
 # --- Track Types ---
 # Define constants for track types for consistency

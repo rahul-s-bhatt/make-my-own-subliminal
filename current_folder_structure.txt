@@ -13,30 +13,42 @@ your_project_root_directory/
 │   ├── step_1_affirmations.py
 │   ├── step_2_background.py
 │   ├── step_3_frequency.py
-│   └── step_4_export.py
+│   ├── step_4_export.py
+│   ├── wizard_state.py         # Session state management specific to the Quick Wizard
+│   └── quick_wizard.py         # Orchestrator class for the Quick Create Wizard workflow
+│
+│
+├── sidebar/
+│   ├── sidebar_manager.py      # Manages sidebar layout and sub-components
+│   ├── sidebar_uploader.py     # Handles sidebar file uploads and TTS input UI
+│   ├── sidebar_generators.py   # Handles sidebar noise/frequency generation UI
+│
+├── track/
+│
+│   ├── track_editor_manager.py # Manages the main track editing panel layout
+│   ├── track_preview_ui.py     # Handles UI for individual track preview/waveform and basic controls
+│   ├── track_metadata_ui.py    # Handles UI for individual track metadata (name, type, mute, solo, delete)
+│
+│
+├── audio_utils/
+│    ├── audio_state_definitions.py # TypedDicts and type aliases for audio/state data
+│    ├── audio_loader.py         # Handles loading/regenerating full audio from source_info
+│    ├── audio_io.py             # Audio file loading (load_audio) and saving (save_audio_to_bytesio, save_audio_to_temp_file)
+│    ├── audio_effects.py        # Individual audio effect functions (apply_reverse, apply_speed_change, etc.)
+│    ├── audio_effects_pipeline.py # Applies sequences of effects (apply_all_effects)
+│    ├── audio_preview.py        # Generates audio snippets for track previews (get_preview_audio)
+│    ├── audio_mixers.py         # Mixes tracks for Advanced Editor (mix_tracks) and Wizard (mix_wizard_tracks)
+│    ├── audio_generators.py     # Generates audio signals (tones, noise)
+│
+│
+│
 │
 ├── main.py                 # Main application entry point and router
 ├── config.py               # Configuration constants and settings
 ├── app_state.py            # Core application state management (tracks)
-├── audio_state_definitions.py # TypedDicts and type aliases for audio/state data
-├── audio_loader.py         # Handles loading/regenerating full audio from source_info
 ├── ui_manager.py           # Orchestrates the main UI (sidebar, editor, master controls)
-├── sidebar_manager.py      # Manages sidebar layout and sub-components
-├── sidebar_uploader.py     # Handles sidebar file uploads and TTS input UI
-├── sidebar_generators.py   # Handles sidebar noise/frequency generation UI
-├── track_editor_manager.py # Manages the main track editing panel layout
-├── track_preview_ui.py     # Handles UI for individual track preview/waveform and basic controls
-├── track_metadata_ui.py    # Handles UI for individual track metadata (name, type, mute, solo, delete)
-├── audio_io.py             # Audio file loading (load_audio) and saving (save_audio_to_bytesio, save_audio_to_temp_file)
-├── audio_effects.py        # Individual audio effect functions (apply_reverse, apply_speed_change, etc.)
-├── audio_effects_pipeline.py # Applies sequences of effects (apply_all_effects)
-├── audio_preview.py        # Generates audio snippets for track previews (get_preview_audio)
-├── audio_mixers.py         # Mixes tracks for Advanced Editor (mix_tracks) and Wizard (mix_wizard_tracks)
-├── audio_generators.py     # Generates audio signals (tones, noise)
 ├── tts_generator.py        # Text-to-Speech generation class
 ├── utils.py                # Utility functions (logging setup, text file reading)
-├── wizard_state.py         # Session state management specific to the Quick Wizard
-├── quick_wizard.py         # Orchestrator class for the Quick Create Wizard workflow
 ├── project_handler.py      # Handles loading project files (Save functionality removed)
 ├── affirmation_expander.py # Logic for expanding affirmation text
 │

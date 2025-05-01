@@ -14,7 +14,7 @@ from config import QUICK_SUBLIMINAL_PRESET_SPEED, QUICK_SUBLIMINAL_PRESET_VOLUME
 # Import necessary components/constants
 # Optional MP3 export dependency check (can be done in main wizard class too)
 try:
-    from pydub import AudioSegment
+    pass
 
     PYDUB_AVAILABLE = True
 except ImportError:
@@ -54,10 +54,20 @@ def render_step_4(wizard):
     # Background
     bg_choice = st.session_state.get("wizard_background_choice")
     bg_volume = st.session_state.get("wizard_background_volume", 0)
-    if bg_choice == "upload" and st.session_state.get("wizard_background_audio") is not None:
-        summary_data.append(f"- **Background:** Uploaded Audio (Volume: {bg_volume:.0%})")
-    elif bg_choice == "noise" and st.session_state.get("wizard_background_audio") is not None:
-        noise_type = st.session_state.get("wizard_background_noise_type", "Unknown Noise")
+    if (
+        bg_choice == "upload"
+        and st.session_state.get("wizard_background_audio") is not None
+    ):
+        summary_data.append(
+            f"- **Background:** Uploaded Audio (Volume: {bg_volume:.0%})"
+        )
+    elif (
+        bg_choice == "noise"
+        and st.session_state.get("wizard_background_audio") is not None
+    ):
+        noise_type = st.session_state.get(
+            "wizard_background_noise_type", "Unknown Noise"
+        )
         summary_data.append(f"- **Background:** {noise_type} (Volume: {bg_volume:.0%})")
     else:  # 'none' or upload/noise failed
         summary_data.append("- **Background:** None")
@@ -65,8 +75,13 @@ def render_step_4(wizard):
     # Frequency
     freq_choice = st.session_state.get("wizard_frequency_choice", "None")
     freq_volume = st.session_state.get("wizard_frequency_volume", 0)
-    if freq_choice != "None" and st.session_state.get("wizard_frequency_audio") is not None:
-        summary_data.append(f"- **Frequency:** {freq_choice} (Volume: {freq_volume:.0%})")
+    if (
+        freq_choice != "None"
+        and st.session_state.get("wizard_frequency_audio") is not None
+    ):
+        summary_data.append(
+            f"- **Frequency:** {freq_choice} (Volume: {freq_volume:.0%})"
+        )
     else:
         summary_data.append("- **Frequency:** None")
 
@@ -74,7 +89,9 @@ def render_step_4(wizard):
     # <<< MODIFIED: Add checkbox for applying quick settings >>>
     apply_settings = st.checkbox(
         f"Apply Quick Subliminal Settings (Speed={QUICK_SUBLIMINAL_PRESET_SPEED}x, Volume={QUICK_SUBLIMINAL_PRESET_VOLUME:.0%})",
-        value=st.session_state.get("wizard_apply_quick_settings", True),  # Get value from state
+        value=st.session_state.get(
+            "wizard_apply_quick_settings", True
+        ),  # Get value from state
         key="wizard_apply_quick_settings_checkbox",  # Use state key
         help="Check this to automatically speed up and lower the volume of the affirmations for a typical subliminal effect. Uncheck to use original speed/volume.",
     )
@@ -85,7 +102,11 @@ def render_step_4(wizard):
     st.divider()
 
     # --- Export Options ---
-    st.session_state.wizard_output_filename = st.text_input("Output Filename (no extension):", value=st.session_state.wizard_output_filename, key="wizard_filename_input")
+    st.session_state.wizard_output_filename = st.text_input(
+        "Output Filename (no extension):",
+        value=st.session_state.wizard_output_filename,
+        key="wizard_filename_input",
+    )
 
     export_formats = ["WAV"]
     help_text = "Export in WAV format (lossless, larger file size)."
@@ -97,18 +118,27 @@ def render_step_4(wizard):
 
     # Get current format index
     try:
-        current_format_index = export_formats.index(st.session_state.wizard_export_format)
+        current_format_index = export_formats.index(
+            st.session_state.wizard_export_format
+        )
     except ValueError:
         current_format_index = 0  # Default to WAV
 
     st.session_state.wizard_export_format = st.radio(
-        "Export Format:", export_formats, key="wizard_export_format_radio", horizontal=True, help=help_text, index=current_format_index
+        "Export Format:",
+        export_formats,
+        key="wizard_export_format_radio",
+        horizontal=True,
+        help=help_text,
+        index=current_format_index,
     )
 
     # --- Generate Button ---
     # Disable if affirmations are missing or if MP3 is chosen but unavailable
     affirmations_missing = st.session_state.get("wizard_affirmation_audio") is None
-    mp3_unavailable = st.session_state.wizard_export_format == "MP3" and not PYDUB_AVAILABLE
+    mp3_unavailable = (
+        st.session_state.wizard_export_format == "MP3" and not PYDUB_AVAILABLE
+    )
     export_disabled = affirmations_missing or mp3_unavailable
     export_tooltip = ""
     if affirmations_missing:
@@ -121,7 +151,8 @@ def render_step_4(wizard):
         key="wizard_generate_button",
         type="primary",
         disabled=export_disabled,
-        help=export_tooltip or "Click to generate the final audio mix.",  # Show tooltip if disabled
+        help=export_tooltip
+        or "Click to generate the final audio mix.",  # Show tooltip if disabled
     ):
         # Call the processing method on the main wizard instance
         # This method will now check the 'wizard_apply_quick_settings' state
@@ -132,7 +163,9 @@ def render_step_4(wizard):
     # --- Show Download Button or Error ---
     if st.session_state.get("wizard_export_buffer"):
         # Sanitize filename
-        sanitized_filename = re.sub(r'[\\/*?:"<>|]', "", st.session_state.wizard_output_filename).strip()
+        sanitized_filename = re.sub(
+            r'[\\/*?:"<>|]', "", st.session_state.wizard_output_filename
+        ).strip()
         if not sanitized_filename:
             sanitized_filename = "mindmorph_quick_mix"  # Default filename
         file_ext = st.session_state.wizard_export_format.lower()
@@ -165,15 +198,27 @@ def render_step_4(wizard):
     col_nav_1, col_nav_2, col_nav_3 = st.columns([1, 2, 2])  # Adjust ratios
     with col_nav_1:
         # Add Back to Home button
-        if st.button("🏠 Back to Home", key="wizard_step4_home", use_container_width=True, help="Exit Wizard and return to main menu."):
+        if st.button(
+            "🏠 Back to Home",
+            key="wizard_step4_home",
+            use_container_width=True,
+            help="Exit Wizard and return to main menu.",
+        ):
             wizard._reset_wizard_state()
             # st.rerun() is handled by reset_wizard_state indirectly
 
     with col_nav_2:
-        if st.button("⬅️ Back: Frequency", key="wizard_step4_back", use_container_width=True):
+        if st.button(
+            "⬅️ Back: Frequency", key="wizard_step4_back", use_container_width=True
+        ):
             wizard._go_to_step(3)
 
     with col_nav_3:
         # 'Finish' or 'Generate' button is handled above in the main part of step 4
         # Add a placeholder or disable a 'Next' button concept here
-        st.button("Finish", key="wizard_step4_finish_placeholder", disabled=True, use_container_width=True)
+        st.button(
+            "Finish",
+            key="wizard_step4_finish_placeholder",
+            disabled=True,
+            use_container_width=True,
+        )

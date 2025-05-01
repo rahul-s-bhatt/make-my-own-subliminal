@@ -5,19 +5,21 @@
 
 import logging
 import os
-from typing import Any, Dict
 
 import streamlit as st
 from PIL import Image
 
 # Import necessary components from other modules
 # <<< MODIFIED: Import TrackDataDict instead of TrackData >>>
-from app_state import AppState, TrackDataDict, TrackID, TrackType
-from config import FAVICON_PATH, TRACK_TYPE_OTHER  # Only need constants used directly here
-from track_metadata_ui import TrackMetadataUI
+from app_state import AppState, TrackDataDict
+from config import (
+    FAVICON_PATH,  # Only need constants used directly here
+    TRACK_TYPE_OTHER,
+)
+from track.track_metadata_ui import TrackMetadataUI
 
 # Import the new UI component classes
-from track_preview_ui import TrackPreviewUI
+from track.track_preview_ui import TrackPreviewUI
 
 logger = logging.getLogger(__name__)
 

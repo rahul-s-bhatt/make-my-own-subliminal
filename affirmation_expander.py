@@ -80,7 +80,9 @@ def _expand_affirmation_single(base: str, multiplier: int) -> List[str]:
 # --- Main Expansion Function ---
 
 
-def expand_affirmations(base_text: str, max_chars: int, multiplier: int = 3) -> Tuple[str, bool]:
+def expand_affirmations(
+    base_text: str, max_chars: int, multiplier: int = 3
+) -> Tuple[str, bool]:
     """
     Expands each line of the base text into multiple affirmations,
     ensures uniqueness, and truncates if exceeding max_chars.
@@ -95,7 +97,9 @@ def expand_affirmations(base_text: str, max_chars: int, multiplier: int = 3) -> 
             - The expanded affirmations as a single string (lines separated by '\n').
             - A boolean indicating if the result was truncated due to max_chars.
     """
-    logger.info(f"Starting affirmation expansion. Multiplier: {multiplier}, Max Chars: {max_chars}")
+    logger.info(
+        f"Starting affirmation expansion. Multiplier: {multiplier}, Max Chars: {max_chars}"
+    )
     was_truncated = False
     # Split input text into lines and filter out empty ones
     base_lines = [line.strip() for line in base_text.splitlines() if line.strip()]
@@ -133,7 +137,9 @@ def expand_affirmations(base_text: str, max_chars: int, multiplier: int = 3) -> 
         else:
             # Stop adding more affirmations if the next one exceeds the limit
             was_truncated = True
-            logger.warning(f"Character limit ({max_chars}) reached. Truncating expanded affirmations.")
+            logger.warning(
+                f"Character limit ({max_chars}) reached. Truncating expanded affirmations."
+            )
             break  # Exit the loop
 
     # Adjust final count: the very last item doesn't have a trailing newline
@@ -143,7 +149,9 @@ def expand_affirmations(base_text: str, max_chars: int, multiplier: int = 3) -> 
     # Join the selected affirmations into a single string
     final_text = "\n".join(final_affirmations_list)
 
-    logger.info(f"Expansion complete. Final affirmations: {len(final_affirmations_list)}, Chars: {len(final_text)}, Truncated: {was_truncated}")
+    logger.info(
+        f"Expansion complete. Final affirmations: {len(final_affirmations_list)}, Chars: {len(final_text)}, Truncated: {was_truncated}"
+    )
     return final_text, was_truncated
 
 

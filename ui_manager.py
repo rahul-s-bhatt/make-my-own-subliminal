@@ -3,12 +3,9 @@
 # Main UI Orchestrator for MindMorph
 # ==========================================
 
-import json
 import logging
-import os
 import re
 from io import BytesIO
-from typing import Any, Dict
 
 import numpy as np
 import streamlit as st
@@ -18,24 +15,20 @@ import streamlit.components.v1 as components  # Import components for JS injecti
 from app_state import AppState
 
 # --- Updated Audio Imports ---
-from audio_io import save_audio_to_bytesio
+from audio_utils.audio_io import save_audio_to_bytesio
 
-# <<< MODIFIED: Import mix_tracks from audio_mixers >>>
-from audio_mixers import mix_tracks
+# <<< MODIFIED: Import mix_tracks from audio_utils.audio_mixers >>>
+from audio_utils.audio_mixers import mix_tracks
 
 # <<< MODIFIED: Import types from definitions file >>>
-from audio_state_definitions import AudioData  # Import type hint
+from audio_utils.audio_state_definitions import AudioData  # Import type hint
 
 # --- End Updated Audio Imports ---
-from config import (
-    GLOBAL_SR,
-    MIX_PREVIEW_DURATION_S,
-    PROJECT_FILE_VERSION,
-)
+from config import GLOBAL_SR, MIX_PREVIEW_DURATION_S, PROJECT_FILE_VERSION
 
 # Import the sub-managers
-from sidebar_manager import SidebarManager
-from track_editor_manager import TrackEditorManager
+from sidebar.sidebar_manager import SidebarManager
+from track.track_editor_manager import TrackEditorManager
 from tts_generator import TTSGenerator
 
 # Optional MP3 export dependency check
@@ -96,7 +89,10 @@ class UIManager:
             sanitized_filename = default_filename
         st.session_state.export_filename_sanitized = sanitized_filename
 
-        if "calculated_mix_duration_s" in st.session_state and st.session_state.calculated_mix_duration_s is not None:
+        if (
+            "calculated_mix_duration_s" in st.session_state
+            and st.session_state.calculated_mix_duration_s is not None
+        ):
             duration_s = st.session_state.calculated_mix_duration_s
             duration_str = f"{duration_s:.2f} seconds"
             if duration_s > 60:
@@ -121,16 +117,34 @@ class UIManager:
                 export_formats.append("MP3")
                 help_text = "Choose WAV (lossless, large) or MP3 (compressed, smaller - requires ffmpeg)."
             else:
-                help_text += " MP3 export disabled (requires 'pydub' library and 'ffmpeg')."
-            export_format = st.radio("Export Format:", export_formats, key="master_export_format_selection", horizontal=True, help=help_text)
-            export_disabled = (export_format == "MP3" and not PYDUB_AVAILABLE) or not self.app_state.get_all_tracks()
+                help_text += (
+                    " MP3 export disabled (requires 'pydub' library and 'ffmpeg')."
+                )
+            export_format = st.radio(
+                "Export Format:",
+                export_formats,
+                key="master_export_format_selection",
+                horizontal=True,
+                help=help_text,
+            )
+            export_disabled = (
+                export_format == "MP3" and not PYDUB_AVAILABLE
+            ) or not self.app_state.get_all_tracks()
             export_button_label = f"💾 Export Full Mix (.{export_format.lower()})"
-            export_help = f"Generate the complete final mix as a .{export_format.lower()} file."
+            export_help = (
+                f"Generate the complete final mix as a .{export_format.lower()} file."
+            )
             if export_disabled and export_format == "MP3":
                 export_help += " MP3 export disabled."
             elif export_disabled:
                 export_help = "Add tracks before exporting."
-            if st.button(export_button_label, key="master_export_mix_button", use_container_width=True, help=export_help, disabled=export_disabled):
+            if st.button(
+                export_button_label,
+                key="master_export_mix_button",
+                use_container_width=True,
+                help=export_help,
+                disabled=export_disabled,
+            ):
                 self._handle_export_click()  # Call the handler which now includes event tracking
             if "export_buffer" in st.session_state and st.session_state.export_buffer:
                 file_ext = st.session_state.get("export_file_ext", "wav")
@@ -149,7 +163,11 @@ class UIManager:
 
     def _clear_export_buffer(self):
         """Clears export-related keys from session state."""
-        keys_to_clear = ["export_buffer", "export_file_ext", "calculated_mix_duration_s"]
+        keys_to_clear = [
+            "export_buffer",
+            "export_file_ext",
+            "calculated_mix_duration_s",
+        ]
         for key in keys_to_clear:
             if key in st.session_state:
                 del st.session_state[key]
@@ -193,7 +211,9 @@ class UIManager:
         """Handles the logic when the 'Export Mix' button is clicked."""
         logger.info("Master Export Mix button clicked.")
         tracks = self.app_state.get_all_tracks()
-        export_format = st.session_state.get("master_export_format_selection", "WAV").lower()
+        export_format = st.session_state.get(
+            "master_export_format_selection", "WAV"
+        ).lower()
         self._clear_export_buffer()
         if "preview_audio_data" in st.session_state:
             del st.session_state.preview_audio_data
@@ -203,7 +223,9 @@ class UIManager:
 
         export_successful = False  # Flag to track if export succeeded
 
-        with st.spinner(f"Generating full mix ({export_format.upper()})... This may take time."):
+        with st.spinner(
+            f"Generating full mix ({export_format.upper()})... This may take time."
+        ):
             try:
                 # <<< MODIFIED: Removed app_state argument >>>
                 full_mix, final_mix_len_samples = mix_tracks(
@@ -213,8 +235,12 @@ class UIManager:
                     target_sr=GLOBAL_SR,
                 )
                 if final_mix_len_samples is not None and GLOBAL_SR > 0:
-                    st.session_state.calculated_mix_duration_s = final_mix_len_samples / GLOBAL_SR
-                    logger.info(f"Actual final mix duration: {st.session_state.calculated_mix_duration_s:.2f}s")
+                    st.session_state.calculated_mix_duration_s = (
+                        final_mix_len_samples / GLOBAL_SR
+                    )
+                    logger.info(
+                        f"Actual final mix duration: {st.session_state.calculated_mix_duration_s:.2f}s"
+                    )
                 else:
                     st.session_state.calculated_mix_duration_s = None
 
@@ -233,11 +259,22 @@ class UIManager:
                             logger.info("Converting full mix to MP3...")
                             full_mix_clipped = np.clip(full_mix, -1.0, 1.0)
                             audio_int16 = (full_mix_clipped * 32767).astype(np.int16)
-                            channels = 2 if audio_int16.ndim > 1 and audio_int16.shape[1] == 2 else 1
-                            segment = AudioSegment(data=audio_int16.tobytes(), sample_width=audio_int16.dtype.itemsize, frame_rate=GLOBAL_SR, channels=channels)
+                            channels = (
+                                2
+                                if audio_int16.ndim > 1 and audio_int16.shape[1] == 2
+                                else 1
+                            )
+                            segment = AudioSegment(
+                                data=audio_int16.tobytes(),
+                                sample_width=audio_int16.dtype.itemsize,
+                                frame_rate=GLOBAL_SR,
+                                channels=channels,
+                            )
                             if channels == 1:
                                 segment = segment.set_channels(2)
-                                logger.info("Converted mono mix to stereo for MP3 export.")
+                                logger.info(
+                                    "Converted mono mix to stereo for MP3 export."
+                                )
                             mp3_buffer = BytesIO()
                             segment.export(mp3_buffer, format="mp3", bitrate="192k")
                             mp3_buffer.seek(0)
@@ -250,7 +287,9 @@ class UIManager:
                                 raise ValueError("MP3 export resulted in empty buffer.")
                         except Exception as e_mp3:
                             logger.exception("Failed to export mix as MP3.")
-                            st.error(f"MP3 Export Failed: {e_mp3}. Ensure ffmpeg is installed.")
+                            st.error(
+                                f"MP3 Export Failed: {e_mp3}. Ensure ffmpeg is installed."
+                            )
                             self._clear_export_buffer()
                     else:
                         # Handle unsupported format or missing dependency
@@ -258,7 +297,9 @@ class UIManager:
                             logger.error("MP3 export selected, but 'pydub' missing.")
                             st.error("MP3 export requires 'pydub' and 'ffmpeg'.")
                         else:
-                            logger.error(f"Unsupported export format '{export_format}'.")
+                            logger.error(
+                                f"Unsupported export format '{export_format}'."
+                            )
                             st.error(f"Export format '{export_format}' not supported.")
                         self._clear_export_buffer()
                 elif full_mix is not None:
@@ -277,7 +318,9 @@ class UIManager:
 
         # --- Send GA Event ONLY if Export was Successful ---
         if export_successful:
-            logger.info(f"Export successful. Sending 'mix_exported' event to Google Analytics for format: {export_format}")
+            logger.info(
+                f"Export successful. Sending 'mix_exported' event to Google Analytics for format: {export_format}"
+            )
             # Construct the JavaScript code to send the event
             ga_event_js = f"""
                 <script>
@@ -297,7 +340,9 @@ class UIManager:
             try:
                 components.html(ga_event_js, height=0)
             except Exception as e_comp:
-                logger.error(f"Failed to inject GA event script using components.html: {e_comp}")
+                logger.error(
+                    f"Failed to inject GA event script using components.html: {e_comp}"
+                )
 
             # Rerun to show the download button
             st.rerun()
@@ -305,7 +350,10 @@ class UIManager:
 
     def render_preview_audio_player(self):
         """Displays the master preview audio player if preview data exists."""
-        if "preview_audio_data" in st.session_state and st.session_state.preview_audio_data:
+        if (
+            "preview_audio_data" in st.session_state
+            and st.session_state.preview_audio_data
+        ):
             logger.debug("Rendering master preview audio player.")
             st.markdown("**Mix Preview:**")
             try:
@@ -320,7 +368,8 @@ class UIManager:
         tracks_exist = bool(self.app_state.get_all_tracks())
         st.divider()
         with st.expander("📖 Show Instructions & Notes", expanded=not tracks_exist):
-            st.markdown("""
+            st.markdown(
+                """
             **Welcome to MindMorph!** Create custom subliminal audio...
             **Workflow:**
             1.  **✨ Select Mode (Top):** Easy or Advanced.
@@ -331,4 +380,5 @@ class UIManager:
             * Subliminal: High speed (4x-10x), low volume (0.05-0.15). Try '⚡ Quick...' button.
             * Advanced: '🔊 Ultrasonic Shift' for silent (experimental).
             * Advanced: `🔁 Loop` for short sounds.
-            """)  # Removed Save/Load instructions
+            """
+            )  # Removed Save/Load instructions

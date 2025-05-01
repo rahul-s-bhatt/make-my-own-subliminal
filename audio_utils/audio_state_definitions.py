@@ -3,7 +3,8 @@
 # Type Definitions for MindMorph Application State
 # ==========================================
 
-from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union  # Use Union for SourceInfo
+from typing import Optional  # Use Union for SourceInfo
+from typing import Any, Dict, List, Tuple, TypedDict, Union
 
 import numpy as np
 
@@ -19,7 +20,9 @@ SampleRate = int
 
 class SourceInfoUpload(TypedDict):
     type: str  # Literal['upload'] # Use Literal in Python 3.8+ for more safety
-    temp_file_path: Optional[str]  # Path to the temporarily stored full uploaded file (Optional before re-upload)
+    temp_file_path: Optional[
+        str
+    ]  # Path to the temporarily stored full uploaded file (Optional before re-upload)
     original_filename: str
 
 
@@ -50,7 +53,9 @@ class SourceInfoFrequency(TypedDict):
 
 
 # Union type for source_info dictionary
-SourceInfo = Union[SourceInfoUpload, SourceInfoTTS, SourceInfoNoise, SourceInfoFrequency]
+SourceInfo = Union[
+    SourceInfoUpload, SourceInfoTTS, SourceInfoNoise, SourceInfoFrequency
+]
 
 
 # --- Track Data Structure ---

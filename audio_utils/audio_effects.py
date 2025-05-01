@@ -4,7 +4,6 @@
 # ==========================================
 
 import logging
-from typing import Any, Dict, Optional
 
 import librosa
 import librosa.effects
@@ -13,8 +12,8 @@ import streamlit as st  # TODO: Remove Streamlit UI calls from this module
 from scipy import signal
 
 # Import constants and types from config
-from config import (
-    GLOBAL_SR,  # Potentially needed for defaults or checks? Added just in case.
+from config import (  # Potentially needed for defaults or checks? Added just in case.
+    GLOBAL_SR,
     ULTRASONIC_FILTER_CUTOFF,
     ULTRASONIC_FILTER_ORDER,
     ULTRASONIC_TARGET_FREQ,
@@ -51,7 +50,9 @@ def apply_reverse(audio: AudioData) -> AudioData:
         return audio  # Return original on error
 
 
-def apply_speed_change(audio: AudioData, sr: SampleRate, speed_factor: float) -> AudioData:
+def apply_speed_change(
+    audio: AudioData, sr: SampleRate, speed_factor: float
+) -> AudioData:
     """Changes the speed of the audio using time stretching."""
     logger.debug(f"Applying speed change: factor={speed_factor:.2f}")
 
@@ -85,12 +86,16 @@ def apply_speed_change(audio: AudioData, sr: SampleRate, speed_factor: float) ->
         audio_contiguous_transposed = np.ascontiguousarray(audio_float.T)
 
         # Apply time stretching
-        audio_stretched_transposed = librosa.effects.time_stretch(y=audio_contiguous_transposed, rate=speed_factor)
+        audio_stretched_transposed = librosa.effects.time_stretch(
+            y=audio_contiguous_transposed, rate=speed_factor
+        )
         # Transpose back to (samples, channels)
         return audio_stretched_transposed.T.astype(np.float32)
 
     except Exception as e:
-        logger.exception(f"Error during librosa time_stretch with factor {speed_factor:.2f}.")
+        logger.exception(
+            f"Error during librosa time_stretch with factor {speed_factor:.2f}."
+        )
         # TODO: Remove direct Streamlit call. Raise exception or return error status.
         st.error(f"Speed change effect failed: {e}")
         return audio  # Return original on error
@@ -114,7 +119,9 @@ def apply_pitch_shift(audio: AudioData, sr: SampleRate, n_steps: float) -> Audio
         # Check for potentially problematic large shifts relative to SR
         max_possible_steps = 12 * np.log2((sr / 2) / 440.0)  # Rough estimate
         if abs(n_steps) > max(12, max_possible_steps):
-            logger.warning(f"Large pitch shift ({n_steps:.1f} steps) requested for SR={sr}Hz. Result quality may be poor or contain artifacts.")
+            logger.warning(
+                f"Large pitch shift ({n_steps:.1f} steps) requested for SR={sr}Hz. Result quality may be poor or contain artifacts."
+            )
 
         # librosa expects (channels, samples) and contiguous array
         # Ensure input is float32
@@ -122,7 +129,9 @@ def apply_pitch_shift(audio: AudioData, sr: SampleRate, n_steps: float) -> Audio
         audio_contiguous_transposed = np.ascontiguousarray(audio_float.T)
 
         # Apply pitch shifting
-        audio_shifted_transposed = librosa.effects.pitch_shift(y=audio_contiguous_transposed, sr=sr, n_steps=n_steps)
+        audio_shifted_transposed = librosa.effects.pitch_shift(
+            y=audio_contiguous_transposed, sr=sr, n_steps=n_steps
+        )
         # Transpose back to (samples, channels)
         return audio_shifted_transposed.T.astype(np.float32)
 
@@ -133,7 +142,9 @@ def apply_pitch_shift(audio: AudioData, sr: SampleRate, n_steps: float) -> Audio
         return audio  # Return original on error
 
 
-def apply_ultrasonic_shift(audio: AudioData, sr: SampleRate, target_freq: float = ULTRASONIC_TARGET_FREQ) -> AudioData:
+def apply_ultrasonic_shift(
+    audio: AudioData, sr: SampleRate, target_freq: float = ULTRASONIC_TARGET_FREQ
+) -> AudioData:
     """
     Shifts audio towards a high target frequency and applies a steep low-pass filter.
     EXPERIMENTAL: Quality depends heavily on source audio and parameters.
@@ -158,10 +169,16 @@ def apply_ultrasonic_shift(audio: AudioData, sr: SampleRate, target_freq: float 
             if median_mag > 1e-6:  # Avoid issues with silence
                 valid_pitches = pitches[magnitudes > median_mag * 0.5]
             else:
-                valid_pitches = pitches[magnitudes > 1e-6]  # Absolute threshold for silence
-            valid_pitches = valid_pitches[valid_pitches > 0]  # Only positive frequencies
+                valid_pitches = pitches[
+                    magnitudes > 1e-6
+                ]  # Absolute threshold for silence
+            valid_pitches = valid_pitches[
+                valid_pitches > 0
+            ]  # Only positive frequencies
         except Exception as e_piptrack:
-            logger.warning(f"Piptrack failed during ultrasonic shift: {e_piptrack}. Using default fundamental.")
+            logger.warning(
+                f"Piptrack failed during ultrasonic shift: {e_piptrack}. Using default fundamental."
+            )
             valid_pitches = []  # Force fallback
 
         if len(valid_pitches) > 0:
@@ -169,25 +186,39 @@ def apply_ultrasonic_shift(audio: AudioData, sr: SampleRate, target_freq: float 
             logger.debug(f"Estimated fundamental frequency: {fundamental_freq:.2f} Hz")
         else:
             fundamental_freq = 440.0  # Default to A4
-            logger.warning(f"Could not estimate fundamental frequency, using default {fundamental_freq} Hz.")
+            logger.warning(
+                f"Could not estimate fundamental frequency, using default {fundamental_freq} Hz."
+            )
 
         if fundamental_freq <= 0 or np.isnan(fundamental_freq):
-            logger.error(f"Invalid fundamental frequency ({fundamental_freq}) estimated. Cannot calculate shift.")
-            st.error("Could not estimate audio fundamental frequency for ultrasonic shift.")
+            logger.error(
+                f"Invalid fundamental frequency ({fundamental_freq}) estimated. Cannot calculate shift."
+            )
+            st.error(
+                "Could not estimate audio fundamental frequency for ultrasonic shift."
+            )
             return audio
 
         # Calculate required pitch shift in semitones
         n_steps = 12 * np.log2(target_freq / fundamental_freq)
-        logger.info(f"Calculated steps for ultrasonic shift: {n_steps:.2f} semitones (Target: {target_freq} Hz, Estimated Fundamental: {fundamental_freq:.1f} Hz)")
+        logger.info(
+            f"Calculated steps for ultrasonic shift: {n_steps:.2f} semitones (Target: {target_freq} Hz, Estimated Fundamental: {fundamental_freq:.1f} Hz)"
+        )
 
         if abs(n_steps) > 36:
-            logger.warning(f"Applying very large pitch shift ({n_steps:.1f} steps) for ultrasonic effect.")
+            logger.warning(
+                f"Applying very large pitch shift ({n_steps:.1f} steps) for ultrasonic effect."
+            )
 
         # --- Step 2: Apply Pitch Shift ---
         audio_contiguous_transposed = np.ascontiguousarray(audio_float.T)
-        audio_shifted_transposed = librosa.effects.pitch_shift(y=audio_contiguous_transposed, sr=sr, n_steps=n_steps)
+        audio_shifted_transposed = librosa.effects.pitch_shift(
+            y=audio_contiguous_transposed, sr=sr, n_steps=n_steps
+        )
         audio_shifted = audio_shifted_transposed.T.astype(np.float32)
-        logger.debug(f"Pitch shift complete. Shifted audio shape: {audio_shifted.shape}")
+        logger.debug(
+            f"Pitch shift complete. Shifted audio shape: {audio_shifted.shape}"
+        )
 
         # --- Step 3: Apply Steep Low-Pass Filter ---
         filter_cutoff = ULTRASONIC_FILTER_CUTOFF
@@ -196,20 +227,28 @@ def apply_ultrasonic_shift(audio: AudioData, sr: SampleRate, target_freq: float 
         normalized_cutoff = filter_cutoff / nyquist
 
         if normalized_cutoff >= 1.0 or normalized_cutoff <= 0:
-            logger.warning(f"Ultrasonic filter cutoff ({filter_cutoff}Hz) invalid for Nyquist ({nyquist}Hz). Skipping filter.")
+            logger.warning(
+                f"Ultrasonic filter cutoff ({filter_cutoff}Hz) invalid for Nyquist ({nyquist}Hz). Skipping filter."
+            )
             return audio_shifted
 
-        logger.info(f"Applying {filter_order}-order low-pass Butterworth filter at {filter_cutoff} Hz.")
+        logger.info(
+            f"Applying {filter_order}-order low-pass Butterworth filter at {filter_cutoff} Hz."
+        )
         b, a = signal.butter(filter_order, normalized_cutoff, btype="lowpass")
 
         min_len_filtfilt = 3 * max(len(a), len(b))
         if audio_shifted.shape[0] <= min_len_filtfilt:
-            logger.warning(f"Shifted audio too short ({audio_shifted.shape[0]}) for filter length ({min_len_filtfilt}). Skipping filter.")
+            logger.warning(
+                f"Shifted audio too short ({audio_shifted.shape[0]}) for filter length ({min_len_filtfilt}). Skipping filter."
+            )
             return audio_shifted
 
         # Apply the filter using filtfilt for zero phase distortion
         audio_filtered = signal.filtfilt(b, a, audio_shifted, axis=0)
-        logger.debug(f"Filtering complete. Filtered audio shape: {audio_filtered.shape}")
+        logger.debug(
+            f"Filtering complete. Filtered audio shape: {audio_filtered.shape}"
+        )
 
         return audio_filtered.astype(np.float32)
 
@@ -219,7 +258,9 @@ def apply_ultrasonic_shift(audio: AudioData, sr: SampleRate, target_freq: float 
         return audio  # Return original on error
 
 
-def apply_standard_filter(audio: AudioData, sr: SampleRate, filter_type: str, cutoff: float) -> AudioData:
+def apply_standard_filter(
+    audio: AudioData, sr: SampleRate, filter_type: str, cutoff: float
+) -> AudioData:
     """Applies a standard Butterworth lowpass or highpass filter."""
     logger.debug(f"Applying standard filter: type={filter_type}, cutoff={cutoff} Hz")
 
@@ -244,14 +285,18 @@ def apply_standard_filter(audio: AudioData, sr: SampleRate, filter_type: str, cu
             return audio
 
         filter_order = 4  # Standard order
-        logger.info(f"Applying {filter_order}-order Butterworth {filter_type} filter at {cutoff} Hz.")
+        logger.info(
+            f"Applying {filter_order}-order Butterworth {filter_type} filter at {cutoff} Hz."
+        )
 
         if filter_type == "lowpass":
             b, a = signal.butter(filter_order, normalized_cutoff, btype="low")
         elif filter_type == "highpass":
             b, a = signal.butter(filter_order, normalized_cutoff, btype="high")
         else:
-            logger.warning(f"Unknown filter type specified: {filter_type}. Skipping filter.")
+            logger.warning(
+                f"Unknown filter type specified: {filter_type}. Skipping filter."
+            )
             st.warning(f"Unknown filter type: {filter_type}")
             return audio
 
@@ -267,6 +312,8 @@ def apply_standard_filter(audio: AudioData, sr: SampleRate, filter_type: str, cu
         return audio_filtered.astype(np.float32)
 
     except Exception as e:
-        logger.exception(f"Error applying standard {filter_type} filter at {cutoff} Hz.")
+        logger.exception(
+            f"Error applying standard {filter_type} filter at {cutoff} Hz."
+        )
         st.error(f"Filter effect failed: {e}")
         return audio  # Return original on error

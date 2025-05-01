@@ -16,12 +16,20 @@ def display_welcome_message():
     if "welcome_message_shown" not in st.session_state:
         with st.container(border=True):
             st.markdown("### 👋 Welcome to MindMorph!")
-            st.markdown("Create custom subliminal audio by layering sounds and applying effects.")
+            st.markdown(
+                "Create custom subliminal audio by layering sounds and applying effects."
+            )
             st.markdown("---")
             st.markdown("#### ✨ Choose Your Experience:")
-            st.markdown("Use the **'Select Editor Mode'** option at the top of the main panel:")
-            st.markdown("- **Easy Mode:** Simplified interface, perfect for getting started quickly.")
-            st.markdown("- **Advanced Mode:** Access all features like detailed frequency generation and audio effects.")
+            st.markdown(
+                "Use the **'Select Editor Mode'** option at the top of the main panel:"
+            )
+            st.markdown(
+                "- **Easy Mode:** Simplified interface, perfect for getting started quickly."
+            )
+            st.markdown(
+                "- **Advanced Mode:** Access all features like detailed frequency generation and audio effects."
+            )
             st.markdown("*(You can switch modes any time!)*")
             st.markdown("---")
             st.markdown("#### Quick Start Workflow:")
@@ -39,7 +47,9 @@ def display_welcome_message():
                 st.markdown("Use **master controls** (bottom).")
                 st.caption("Preview or Download")
             st.markdown("---")
-            st.markdown("*(Click button below to hide this guide. Find details in Instructions at page bottom.)*")
+            st.markdown(
+                "*(Click button below to hide this guide. Find details in Instructions at page bottom.)*"
+            )
             # Center the button
             button_cols = st.columns([1, 1.5, 1])  # Adjust ratios as needed
             with button_cols[1]:

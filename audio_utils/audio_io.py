@@ -7,7 +7,7 @@ import logging
 import os
 import tempfile
 from io import BytesIO
-from typing import Any, Dict, Optional, Tuple
+from typing import Optional
 
 import librosa
 import numpy as np
@@ -34,7 +34,9 @@ logger = logging.getLogger(__name__)
 
 # <<< MODIFIED: Added duration parameter and updated return type hint >>>
 def load_audio(
-    file_source: UploadedFile | BytesIO | str, target_sr: Optional[SampleRate] = GLOBAL_SR, duration: Optional[float] = None
+    file_source: UploadedFile | BytesIO | str,
+    target_sr: Optional[SampleRate] = GLOBAL_SR,
+    duration: Optional[float] = None,
 ) -> tuple[Optional[AudioData], Optional[SampleRate]]:
     """
     Loads audio from various sources, ensures stereo, resamples, and optionally limits duration.
@@ -51,7 +53,9 @@ def load_audio(
             - The sample rate of the loaded audio (target_sr if resampling occurred,
               original SR otherwise), or None on failure.
     """
-    logger.info(f"Loading audio from source type: {type(file_source)}, Target SR: {target_sr}, Duration: {duration}s")
+    logger.info(
+        f"Loading audio from source type: {type(file_source)}, Target SR: {target_sr}, Duration: {duration}s"
+    )
     try:
         # Load audio using librosa
         # sr=None preserves original sample rate, mono=False loads all channels
@@ -69,11 +73,19 @@ def load_audio(
         elif audio.shape[0] == 2 and audio.shape[1] > 2:
             # If shape is (2, samples), transpose to (samples, 2)
             audio = audio.T
-        elif audio.ndim > 1 and audio.shape[0] > 2:  # Check if first dimension is channels > 2
-            logger.warning(f"Audio has more than 2 channels ({audio.shape[0]}). Using only the first two.")
+        elif (
+            audio.ndim > 1 and audio.shape[0] > 2
+        ):  # Check if first dimension is channels > 2
+            logger.warning(
+                f"Audio has more than 2 channels ({audio.shape[0]}). Using only the first two."
+            )
             audio = audio[:2, :].T  # Take first 2 channels and transpose
-        elif audio.ndim > 1 and audio.shape[1] > 2:  # Check if second dimension is channels > 2 (already transposed?)
-            logger.warning(f"Audio has more than 2 channels ({audio.shape[1]}). Using only the first two.")
+        elif (
+            audio.ndim > 1 and audio.shape[1] > 2
+        ):  # Check if second dimension is channels > 2 (already transposed?)
+            logger.warning(
+                f"Audio has more than 2 channels ({audio.shape[1]}). Using only the first two."
+            )
             audio = audio[:, :2]  # Take first 2 channels
         elif audio.ndim > 1 and audio.shape[1] == 1:
             # If shape is (samples, 1), duplicate channel
@@ -83,7 +95,9 @@ def load_audio(
         elif audio.ndim == 2 and audio.shape[1] == 2:
             logger.debug("Audio is already in desired stereo format (samples, 2).")
         else:
-            logger.warning(f"Unexpected audio shape {audio.shape}. Attempting to proceed, but might cause issues.")
+            logger.warning(
+                f"Unexpected audio shape {audio.shape}. Attempting to proceed, but might cause issues."
+            )
 
         # --- Resample if Necessary and target_sr is specified ---
         output_sr = sr  # Start with original SR
@@ -94,19 +108,27 @@ def load_audio(
                 # Librosa expects (channels, samples) for resample, so transpose
                 audio_float = audio.astype(np.float32)
                 # Handle potential shape issues before transposing
-                if audio_float.ndim == 1:  # Should have been converted to stereo already, but double-check
+                if (
+                    audio_float.ndim == 1
+                ):  # Should have been converted to stereo already, but double-check
                     audio_float = np.stack([audio_float, audio_float], axis=-1)
 
                 if audio_float.shape[1] != 2:  # If still not (samples, 2) after checks
-                    logger.error(f"Cannot resample, unexpected audio shape after stereo conversion: {audio_float.shape}")
+                    logger.error(
+                        f"Cannot resample, unexpected audio shape after stereo conversion: {audio_float.shape}"
+                    )
                     return None, None  # Indicate failure
 
-                audio_resampled = librosa.resample(audio_float.T, orig_sr=sr, target_sr=target_sr)
+                audio_resampled = librosa.resample(
+                    audio_float.T, orig_sr=sr, target_sr=target_sr
+                )
                 # Transpose back to (samples, channels)
                 audio = audio_resampled.T
                 output_sr = target_sr  # Update the output SR
             else:
-                logger.warning("Audio data is empty, cannot resample. Original SR was {sr}Hz.")
+                logger.warning(
+                    "Audio data is empty, cannot resample. Original SR was {sr}Hz."
+                )
                 output_sr = target_sr  # Return target SR even if empty
 
         # Ensure final output is float32
@@ -197,7 +219,11 @@ def save_audio_to_temp_file(audio: AudioData, sr: SampleRate) -> str | None:
         if temp_file_path and os.path.exists(temp_file_path):
             try:
                 os.remove(temp_file_path)
-                logger.debug(f"Cleaned up partially created temp file: {temp_file_path}")
+                logger.debug(
+                    f"Cleaned up partially created temp file: {temp_file_path}"
+                )
             except OSError as e_os:
-                logger.warning(f"Failed to clean up partial temp file {temp_file_path}: {e_os}")
+                logger.warning(
+                    f"Failed to clean up partial temp file {temp_file_path}: {e_os}"
+                )
         return None

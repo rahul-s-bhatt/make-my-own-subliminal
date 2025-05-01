@@ -3,12 +3,9 @@
 # Main Sidebar UI Orchestrator for MindMorph
 # ==========================================
 
-import json
 import logging
 import os
-from typing import Any, Dict, cast
 
-import numpy as np
 import streamlit as st
 from PIL import Image
 
@@ -16,15 +13,10 @@ from PIL import Image
 from app_state import AppState  # Keep AppState import
 
 # <<< MODIFIED: Import types from definitions file >>>
-from audio_state_definitions import TrackDataDict, TrackType
-
 # Import config/utils as needed by this class
-from config import (
-    LOGO_PATH,
-    PROJECT_FILE_VERSION,
-)
-from sidebar_generators import SidebarGenerators
-from sidebar_uploader import SidebarUploader
+from config import LOGO_PATH
+from sidebar.sidebar_generators import SidebarGenerators
+from sidebar.sidebar_uploader import SidebarUploader
 from tts_generator import TTSGenerator
 
 logger = logging.getLogger(__name__)

@@ -25,9 +25,13 @@ logger = logging.getLogger(__name__)
 # ==========================================
 
 
-def generate_binaural_beats(duration: float, freq_left: float, freq_right: float, sr: SampleRate, volume: float) -> AudioData:
+def generate_binaural_beats(
+    duration: float, freq_left: float, freq_right: float, sr: SampleRate, volume: float
+) -> AudioData:
     """Generates stereo binaural beats."""
-    logger.info(f"Generating binaural beats: duration={duration}s, L={freq_left}Hz, R={freq_right}Hz, SR={sr}Hz, volume={volume:.2f}")
+    logger.info(
+        f"Generating binaural beats: duration={duration}s, L={freq_left}Hz, R={freq_right}Hz, SR={sr}Hz, volume={volume:.2f}"
+    )
     num_samples = int(sr * duration)
     if num_samples <= 0:
         logger.warning("Duration results in zero samples for binaural beats.")
@@ -44,9 +48,13 @@ def generate_binaural_beats(duration: float, freq_left: float, freq_right: float
     return np.clip(audio, -1.0, 1.0).astype(np.float32)
 
 
-def generate_solfeggio_frequency(duration: float, freq: float, sr: SampleRate, volume: float) -> AudioData:
+def generate_solfeggio_frequency(
+    duration: float, freq: float, sr: SampleRate, volume: float
+) -> AudioData:
     """Generates a stereo pure tone (Solfeggio)."""
-    logger.info(f"Generating Solfeggio tone: duration={duration}s, F={freq}Hz, SR={sr}Hz, volume={volume:.2f}")
+    logger.info(
+        f"Generating Solfeggio tone: duration={duration}s, F={freq}Hz, SR={sr}Hz, volume={volume:.2f}"
+    )
     num_samples = int(sr * duration)
     if num_samples <= 0:
         logger.warning("Duration results in zero samples for Solfeggio tone.")
@@ -61,9 +69,17 @@ def generate_solfeggio_frequency(duration: float, freq: float, sr: SampleRate, v
     return np.clip(audio, -1.0, 1.0).astype(np.float32)
 
 
-def generate_isochronic_tones(duration: float, carrier_freq: float, pulse_freq: float, sr: SampleRate, volume: float) -> AudioData:
+def generate_isochronic_tones(
+    duration: float,
+    carrier_freq: float,
+    pulse_freq: float,
+    sr: SampleRate,
+    volume: float,
+) -> AudioData:
     """Generates stereo isochronic tones using amplitude modulation."""
-    logger.info(f"Generating Isochronic tones: duration={duration}s, Carrier={carrier_freq}Hz, Pulse={pulse_freq}Hz, SR={sr}Hz, volume={volume:.2f}")
+    logger.info(
+        f"Generating Isochronic tones: duration={duration}s, Carrier={carrier_freq}Hz, Pulse={pulse_freq}Hz, SR={sr}Hz, volume={volume:.2f}"
+    )
     num_samples = int(sr * duration)
     if num_samples <= 0:
         logger.warning("Duration results in zero samples for Isochronic tones.")
@@ -76,7 +92,9 @@ def generate_isochronic_tones(duration: float, carrier_freq: float, pulse_freq: 
 
     # Modulation wave (creates the pulsing effect - square wave)
     # 0.5 * (sign(...) + 1) creates a square wave oscillating between 0 and 1
-    modulation_wave = 0.5 * (np.sign(np.sin(2 * np.pi * pulse_freq * t + np.pi / 2)) + 1)
+    modulation_wave = 0.5 * (
+        np.sign(np.sin(2 * np.pi * pulse_freq * t + np.pi / 2)) + 1
+    )
 
     # Modulate the carrier by the modulation wave
     modulated_signal = carrier_wave * modulation_wave
@@ -164,7 +182,9 @@ def generate_brown_noise(num_samples: int) -> AudioData:
     return brown_approx.astype(np.float32)
 
 
-def generate_noise(noise_type: str, duration: float, sr: SampleRate, volume: float) -> Optional[AudioData]:
+def generate_noise(
+    noise_type: str, duration: float, sr: SampleRate, volume: float
+) -> Optional[AudioData]:
     """
     Generates a specified type of noise (White, Pink, Brown).
 
@@ -177,7 +197,9 @@ def generate_noise(noise_type: str, duration: float, sr: SampleRate, volume: flo
     Returns:
         The generated noise audio data, or None if type is unknown or duration is invalid.
     """
-    logger.info(f"Generating {noise_type}: duration={duration}s, SR={sr}Hz, volume={volume:.2f}")
+    logger.info(
+        f"Generating {noise_type}: duration={duration}s, SR={sr}Hz, volume={volume:.2f}"
+    )
     num_samples = int(sr * duration)
     if num_samples <= 0:
         logger.warning(f"Duration results in zero samples for {noise_type}.")

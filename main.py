@@ -5,7 +5,6 @@
 # ==========================================
 
 import logging
-import os
 
 import streamlit as st
 import streamlit.components.v1 as components  # Import components
@@ -13,7 +12,7 @@ from PIL import Image
 
 # --- Keep imports needed for initial setup ---
 # <<< MODIFIED: Removed unused theme imports, ensured PATERON_URL is imported >>>
-from config import FAVICON_PATH, GA_MEASUREMENT_ID, GOOGLE_FORM_URL, PATERON_URL
+from config import FAVICON_PATH, GA_MEASUREMENT_ID, PATERON_URL
 from utils import setup_logging
 
 # --- Early Setup: Logging and Page Config ---
@@ -45,7 +44,9 @@ logger.info(f"Theme preference set to: {selected_theme_name}")
 
 
 # --- ADD GOOGLE ANALYTICS TAG ---
-if not GA_MEASUREMENT_ID or GA_MEASUREMENT_ID == "YOUR_GA_MEASUREMENT_ID_HERE":  # Check for placeholder
+if (
+    not GA_MEASUREMENT_ID or GA_MEASUREMENT_ID == "YOUR_GA_MEASUREMENT_ID_HERE"
+):  # Check for placeholder
     logger.warning("Google Analytics Measurement ID is not set in config.py.")
 else:
     google_analytics_code = f"""
@@ -152,9 +153,14 @@ def main():
                 """
             )
             st.markdown("")
-            if st.button("Start Wizard", key="start_wizard_button", use_container_width=True, type="primary"):
+            if st.button(
+                "Start Wizard",
+                key="start_wizard_button",
+                use_container_width=True,
+                type="primary",
+            ):
                 st.session_state.selected_workflow = "wizard"
-                from wizard_state import initialize_wizard_state
+                from wizard_steps.wizard_state import initialize_wizard_state
 
                 initialize_wizard_state()
                 st.rerun()
@@ -172,7 +178,11 @@ def main():
                 """
             )
             st.markdown("")
-            if st.button("Open Advanced Editor", key="start_advanced_button", use_container_width=True):
+            if st.button(
+                "Open Advanced Editor",
+                key="start_advanced_button",
+                use_container_width=True,
+            ):
                 st.session_state.selected_workflow = "advanced"
                 if "app_mode" not in st.session_state:
                     st.session_state.app_mode = "Easy"
@@ -182,17 +192,23 @@ def main():
 
         # --- ADD PATREON SUPPORT BUTTON ---
         st.markdown("#### ❤️ Support MindMorph")
-        st.markdown("If you find MindMorph useful, please consider supporting its development on Patreon. Your support helps keep the tool free and allows for new features!")
+        st.markdown(
+            "If you find MindMorph useful, please consider supporting its development on Patreon. Your support helps keep the tool free and allows for new features!"
+        )
 
         # Use PATERON_URL from config
         # Check if the URL is the placeholder or empty
-        if not PATERON_URL or PATERON_URL == "YOUR_PATERON_URL_HERE":  # Adjust placeholder if needed
+        if (
+            not PATERON_URL or PATERON_URL == "YOUR_PATERON_URL_HERE"
+        ):  # Adjust placeholder if needed
             logger.warning("Patreon URL not configured in config.py")
             # Optionally display a message or hide the button
             # st.warning("Patreon link not configured.")
         else:
             # Use columns to center the button or adjust its width
-            col_support_1, col_support_2, col_support_3 = st.columns([1, 1.5, 1])  # Adjust ratios as needed
+            col_support_1, col_support_2, col_support_3 = st.columns(
+                [1, 1.5, 1]
+            )  # Adjust ratios as needed
             with col_support_2:
                 st.link_button(
                     "💖 Join Patreon",
@@ -207,8 +223,8 @@ def main():
     # --- Run Selected Workflow ---
     elif st.session_state.selected_workflow == "wizard":
         logger.info("Running Quick Create Wizard workflow.")
-        from quick_wizard import QuickWizard
         from tts_generator import TTSGenerator
+        from wizard_steps.quick_wizard import QuickWizard
 
         if "tts_generator_wizard" not in st.session_state:
             st.session_state.tts_generator_wizard = TTSGenerator()
@@ -229,9 +245,13 @@ def main():
         if "tts_generator" not in st.session_state:
             st.session_state.tts_generator = TTSGenerator()
         if "project_handler" not in st.session_state:
-            st.session_state.project_handler = ProjectHandler(st.session_state.app_state)
+            st.session_state.project_handler = ProjectHandler(
+                st.session_state.app_state
+            )
         if "ui_manager" not in st.session_state:
-            st.session_state.ui_manager = UIManager(st.session_state.app_state, st.session_state.tts_generator)
+            st.session_state.ui_manager = UIManager(
+                st.session_state.app_state, st.session_state.tts_generator
+            )
 
         # --- Render Top Bar for Advanced Editor ---
         st.title("🧠 MindMorph - Advanced Editor")
@@ -255,10 +275,14 @@ def main():
                 horizontal=True,
                 help="Choose between a simplified view (Easy) or access to all features (Advanced).",
             )
-            st.caption("Easy mode simplifies the interface; Advanced mode shows all track controls.")
+            st.caption(
+                "Easy mode simplifies the interface; Advanced mode shows all track controls."
+            )
 
             if selected_mode != st.session_state.app_mode:
-                logger.info(f"Advanced editor mode changed from '{st.session_state.app_mode}' to '{selected_mode}'")
+                logger.info(
+                    f"Advanced editor mode changed from '{st.session_state.app_mode}' to '{selected_mode}'"
+                )
                 st.session_state.app_mode = selected_mode
                 if "export_buffer" in st.session_state:
                     del st.session_state.export_buffer
@@ -268,7 +292,12 @@ def main():
 
         with header_cols[1]:
             # Back to Home Button
-            if st.button("🏠 Back to Home", key="advanced_back_home", help="Exit Advanced Editor and return to workflow selection.", use_container_width=True):
+            if st.button(
+                "🏠 Back to Home",
+                key="advanced_back_home",
+                help="Exit Advanced Editor and return to workflow selection.",
+                use_container_width=True,
+            ):
                 reset_advanced_editor_state()
                 st.rerun()
 
@@ -278,7 +307,9 @@ def main():
         st.session_state.ui_manager.render_ui(mode=st.session_state.app_mode)
 
     else:
-        logger.warning(f"Invalid selected_workflow state: {st.session_state.selected_workflow}. Resetting.")
+        logger.warning(
+            f"Invalid selected_workflow state: {st.session_state.selected_workflow}. Resetting."
+        )
         st.session_state.selected_workflow = None
         st.rerun()
 
@@ -291,4 +322,6 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         logger.exception("A critical error occurred in the main execution block.")
-        st.error("An unexpected error occurred. Please check the application logs or try reloading the page.")
+        st.error(
+            "An unexpected error occurred. Please check the application logs or try reloading the page."
+        )

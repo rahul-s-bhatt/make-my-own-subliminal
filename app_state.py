@@ -13,14 +13,20 @@ import numpy as np
 import streamlit as st
 
 # <<< MODIFIED: Import definitions from the new definitions file >>>
-from audio_state_definitions import AudioData, SourceInfo, SourceInfoUpload, TrackDataDict, TrackID, TrackType
+from audio_utils.audio_state_definitions import (
+    AudioData,
+    SourceInfo,
+    SourceInfoUpload,
+    TrackDataDict,
+    TrackID,
+)
 
 # Import constants and default parameters from config.py
 from config import GLOBAL_SR, TRACK_TYPE_OTHER
 
 # <<< REMOVED imports for audio generation/loading >>>
-# from audio_io import load_audio
-# from audio_generators import (...)
+# from audio_utils.audio_io import load_audio
+# from audio_utils.audio_generators import (...)
 # from tts_generator import TTSGenerator
 
 
@@ -48,10 +54,14 @@ class AppState:
         in st.session_state and performs basic validation/cleanup.
         """
         if self.STATE_KEY not in st.session_state:
-            logger.info(f"Initializing new application state under key '{self.STATE_KEY}'.")
+            logger.info(
+                f"Initializing new application state under key '{self.STATE_KEY}'."
+            )
             st.session_state[self.STATE_KEY] = {}
         else:
-            logger.debug(f"Using existing application state from key '{self.STATE_KEY}'.")
+            logger.debug(
+                f"Using existing application state from key '{self.STATE_KEY}'."
+            )
             self._validate_and_clean_state()
 
     def _validate_and_clean_state(self):
@@ -68,7 +78,9 @@ class AppState:
             state_updated = False
             for key in required_keys:
                 if key not in track_data:
-                    logger.warning(f"Track '{track_data.get('name', track_id)}' missing key '{key}'. State might be inconsistent.")
+                    logger.warning(
+                        f"Track '{track_data.get('name', track_id)}' missing key '{key}'. State might be inconsistent."
+                    )
                     # Attempting to add a default might be risky without knowing the type
                     # Consider adding basic defaults like None or 0 based on expected type if issues persist
 
@@ -89,8 +101,12 @@ class AppState:
             ]
             for key in deprecated_keys:
                 if key in track_data:
-                    logger.debug(f"Removing deprecated key '{key}' for track {track_id}.")
-                    if track_id in st.session_state[self.STATE_KEY]:  # Check if track still exists
+                    logger.debug(
+                        f"Removing deprecated key '{key}' for track {track_id}."
+                    )
+                    if (
+                        track_id in st.session_state[self.STATE_KEY]
+                    ):  # Check if track still exists
                         del st.session_state[self.STATE_KEY][track_id][key]
                         state_updated = True
 
@@ -98,16 +114,26 @@ class AppState:
             if track_data.get("preview_settings_hash") is None:
                 old_path = track_data.get("preview_temp_file_path")
                 if old_path:
-                    logger.warning(f"Preview hash missing for track {track_id}. Invalidating preview file path.")
-                    if track_id in st.session_state[self.STATE_KEY]:  # Check if track still exists
-                        st.session_state[self.STATE_KEY][track_id]["preview_temp_file_path"] = None
+                    logger.warning(
+                        f"Preview hash missing for track {track_id}. Invalidating preview file path."
+                    )
+                    if (
+                        track_id in st.session_state[self.STATE_KEY]
+                    ):  # Check if track still exists
+                        st.session_state[self.STATE_KEY][track_id][
+                            "preview_temp_file_path"
+                        ] = None
                         state_updated = True
                         if os.path.exists(old_path):
                             try:
                                 os.remove(old_path)
-                                logger.info(f"Cleaned up orphaned preview file: {old_path}")
+                                logger.info(
+                                    f"Cleaned up orphaned preview file: {old_path}"
+                                )
                             except OSError as e:
-                                logger.warning(f"Could not clean up orphaned preview file {old_path}: {e}")
+                                logger.warning(
+                                    f"Could not clean up orphaned preview file {old_path}: {e}"
+                                )
 
             if state_updated:
                 logger.debug(f"State updated during validation for track {track_id}.")
@@ -132,7 +158,13 @@ class AppState:
             return track_data.get("audio_snippet")
         return None
 
-    def add_track(self, audio_snippet: Optional[AudioData], source_info: SourceInfo, sr: int, initial_params: Optional[Dict[str, Any]] = None) -> TrackID:
+    def add_track(
+        self,
+        audio_snippet: Optional[AudioData],
+        source_info: SourceInfo,
+        sr: int,
+        initial_params: Optional[Dict[str, Any]] = None,
+    ) -> TrackID:
         """
         Adds a new track data structure to the application state.
 
@@ -150,14 +182,20 @@ class AppState:
         if not isinstance(source_info, dict) or "type" not in source_info:
             raise ValueError("Invalid source_info provided.")
         if not isinstance(sr, int) or sr <= 0:
-            logger.warning(f"Invalid sample rate {sr} provided for new track. Defaulting to {GLOBAL_SR}.")
+            logger.warning(
+                f"Invalid sample rate {sr} provided for new track. Defaulting to {GLOBAL_SR}."
+            )
             sr = GLOBAL_SR
         if audio_snippet is not None and not isinstance(audio_snippet, np.ndarray):
-            logger.error("Invalid audio_snippet provided (must be numpy array or None). Setting snippet to None.")
+            logger.error(
+                "Invalid audio_snippet provided (must be numpy array or None). Setting snippet to None."
+            )
             audio_snippet = None
 
         track_id = str(uuid.uuid4())
-        logger.info(f"Attempting to add new track with generated ID: {track_id}, Source Type: {source_info['type']}")
+        logger.info(
+            f"Attempting to add new track with generated ID: {track_id}, Source Type: {source_info['type']}"
+        )
 
         # Define default structure based on TrackDataDict
         new_track: TrackDataDict = {
@@ -187,10 +225,14 @@ class AppState:
                 if key in new_track:
                     new_track[key] = value
                 else:
-                    logger.warning(f"Ignoring unknown initial parameter '{key}' for track {track_id}")
+                    logger.warning(
+                        f"Ignoring unknown initial parameter '{key}' for track {track_id}"
+                    )
 
         st.session_state[self.STATE_KEY][track_id] = new_track
-        logger.info(f"Successfully added track ID: {track_id}, Name: '{new_track['name']}', Type: {new_track['track_type']}")
+        logger.info(
+            f"Successfully added track ID: {track_id}, Name: '{new_track['name']}', Type: {new_track['track_type']}"
+        )
         return track_id
 
     def delete_track(self, track_id: TrackID) -> bool:
@@ -205,12 +247,20 @@ class AppState:
             source_info = track_data.get("source_info")
 
             # Cleanup Preview File
-            if preview_path and isinstance(preview_path, str) and os.path.exists(preview_path):
+            if (
+                preview_path
+                and isinstance(preview_path, str)
+                and os.path.exists(preview_path)
+            ):
                 try:
                     os.remove(preview_path)
-                    logger.info(f"Deleted preview temp file '{preview_path}' for track {track_id} ('{track_name}')")
+                    logger.info(
+                        f"Deleted preview temp file '{preview_path}' for track {track_id} ('{track_name}')"
+                    )
                 except OSError as e:
-                    logger.warning(f"Failed to delete preview temp file '{preview_path}' for track {track_id}: {e}")
+                    logger.warning(
+                        f"Failed to delete preview temp file '{preview_path}' for track {track_id}: {e}"
+                    )
 
             # Cleanup Temporary Upload File
             # Use type guard for safer access
@@ -218,16 +268,26 @@ class AppState:
                 # Cast to the specific type after checking 'type' for type checker happiness
                 upload_info = cast(SourceInfoUpload, source_info)
                 temp_upload_path = upload_info.get("temp_file_path")
-                if temp_upload_path and isinstance(temp_upload_path, str) and os.path.exists(temp_upload_path):
+                if (
+                    temp_upload_path
+                    and isinstance(temp_upload_path, str)
+                    and os.path.exists(temp_upload_path)
+                ):
                     try:
                         os.remove(temp_upload_path)
-                        logger.info(f"Deleted temporary upload file '{temp_upload_path}' for track {track_id} ('{track_name}')")
+                        logger.info(
+                            f"Deleted temporary upload file '{temp_upload_path}' for track {track_id} ('{track_name}')"
+                        )
                     except OSError as e:
-                        logger.warning(f"Failed to delete temporary upload file '{temp_upload_path}' for track {track_id}: {e}")
+                        logger.warning(
+                            f"Failed to delete temporary upload file '{temp_upload_path}' for track {track_id}: {e}"
+                        )
 
             # Remove the track from the session state dictionary
             del st.session_state[self.STATE_KEY][track_id]
-            logger.info(f"Deleted track ID: {track_id}, Name: '{track_name}' from state.")
+            logger.info(
+                f"Deleted track ID: {track_id}, Name: '{track_name}' from state."
+            )
             return True
         else:
             logger.warning(f"Attempted to delete non-existent track ID: {track_id}")
@@ -240,15 +300,21 @@ class AppState:
         """
         tracks = self._get_tracks_dict()
         if track_id not in tracks:
-            logger.warning(f"Attempted to update parameter '{param_name}' for non-existent track ID: {track_id}")
+            logger.warning(
+                f"Attempted to update parameter '{param_name}' for non-existent track ID: {track_id}"
+            )
             return
 
         if param_name in ["audio_snippet", "source_info", "sr"]:
-            logger.error(f"Attempted to update protected parameter '{param_name}' via update_track_param. Ignoring.")
+            logger.error(
+                f"Attempted to update protected parameter '{param_name}' via update_track_param. Ignoring."
+            )
             return
 
         if param_name not in TrackDataDict.__annotations__:
-            logger.warning(f"Attempted to update invalid parameter '{param_name}' for track {track_id}. Ignoring.")
+            logger.warning(
+                f"Attempted to update invalid parameter '{param_name}' for track {track_id}. Ignoring."
+            )
             return
 
         current_value = tracks[track_id].get(param_name)
@@ -262,34 +328,58 @@ class AppState:
         if not needs_update:
             return
 
-        logger.debug(f"Updating parameter '{param_name}' for track {track_id} from '{current_value}' to '{value}'.")
+        logger.debug(
+            f"Updating parameter '{param_name}' for track {track_id} from '{current_value}' to '{value}'."
+        )
         st.session_state[self.STATE_KEY][track_id][param_name] = value
 
-        preview_affecting_params = ["volume", "speed_factor", "pitch_shift", "pan", "filter_type", "filter_cutoff", "reverse_audio", "ultrasonic_shift", "loop_to_fit"]
+        preview_affecting_params = [
+            "volume",
+            "speed_factor",
+            "pitch_shift",
+            "pan",
+            "filter_type",
+            "filter_cutoff",
+            "reverse_audio",
+            "ultrasonic_shift",
+            "loop_to_fit",
+        ]
         if param_name in preview_affecting_params:
-            logger.debug(f"Parameter '{param_name}' changed, invalidating preview hash.")
+            logger.debug(
+                f"Parameter '{param_name}' changed, invalidating preview hash."
+            )
             st.session_state[self.STATE_KEY][track_id]["preview_settings_hash"] = None
 
         # Handle specific parameter interactions
         if param_name == "ultrasonic_shift" and value is True:
             if st.session_state[self.STATE_KEY][track_id]["pitch_shift"] != 0:
-                logger.debug(f"Ultrasonic shift enabled, disabling regular pitch shift.")
+                logger.debug(
+                    f"Ultrasonic shift enabled, disabling regular pitch shift."
+                )
                 st.session_state[self.STATE_KEY][track_id]["pitch_shift"] = 0.0
-                st.session_state[self.STATE_KEY][track_id]["preview_settings_hash"] = None
+                st.session_state[self.STATE_KEY][track_id][
+                    "preview_settings_hash"
+                ] = None
         elif param_name == "pitch_shift" and not np.isclose(value, 0.0):
             if st.session_state[self.STATE_KEY][track_id]["ultrasonic_shift"] is True:
                 logger.debug(f"Regular pitch shift set, disabling ultrasonic shift.")
                 st.session_state[self.STATE_KEY][track_id]["ultrasonic_shift"] = False
-                st.session_state[self.STATE_KEY][track_id]["preview_settings_hash"] = None
+                st.session_state[self.STATE_KEY][track_id][
+                    "preview_settings_hash"
+                ] = None
 
     def increment_update_counter(self, track_id: TrackID):
         """Increments the update counter for a track."""
         tracks = self._get_tracks_dict()
         if track_id in tracks:
             current_counter = tracks[track_id].get("update_counter", 0)
-            st.session_state[self.STATE_KEY][track_id]["update_counter"] = current_counter + 1
+            st.session_state[self.STATE_KEY][track_id]["update_counter"] = (
+                current_counter + 1
+            )
         else:
-            logger.warning(f"Attempted increment update counter for non-existent track ID: {track_id}")
+            logger.warning(
+                f"Attempted increment update counter for non-existent track ID: {track_id}"
+            )
 
     def get_loaded_track_names(self) -> List[str]:
         """Returns a list of names of all currently loaded tracks."""

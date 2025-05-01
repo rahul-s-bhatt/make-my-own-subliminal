@@ -4,48 +4,37 @@
 # ==========================================
 
 import logging
-import re
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List
 
 import numpy as np
 import streamlit as st
 
 # Import necessary components from other modules
-from audio_generators import (
-    generate_binaural_beats,
-    generate_isochronic_tones,
-    generate_noise,
-    generate_solfeggio_frequency,
-)
-from audio_io import load_audio, save_audio_to_bytesio
+from audio_utils.audio_io import save_audio_to_bytesio
 
-# Import mix_wizard_tracks from audio_mixers
-from audio_mixers import mix_wizard_tracks
+# Import mix_wizard_tracks from audio_utils.audio_mixers
+from audio_utils.audio_mixers import mix_wizard_tracks
 
 # Type hint for AudioData
 try:
-    from audio_effects_pipeline import AudioData
+    from audio_utils.audio_effects_pipeline import AudioData
 except ImportError:
     AudioData = np.ndarray  # Fallback
 
-from config import (
-    GLOBAL_SR,
-    MAX_AFFIRMATION_CHARS,
-    MAX_AUDIO_DURATION_S,
-    PROJECT_FILE_VERSION,
-    # <<< ADDED: Import preset constants >>>
-    QUICK_SUBLIMINAL_PRESET_SPEED,
-    QUICK_SUBLIMINAL_PRESET_VOLUME,
-)
-from tts_generator import TTSGenerator
-from utils import read_text_file
-
 # Import wizard state management
-from wizard_state import initialize_wizard_state, reset_wizard_state
+from config import GLOBAL_SR  # <<< ADDED: Import preset constants >>>
+from config import QUICK_SUBLIMINAL_PRESET_SPEED, QUICK_SUBLIMINAL_PRESET_VOLUME
+from tts_generator import TTSGenerator
 
 # Import step rendering functions
-from wizard_steps import step_1_affirmations, step_2_background, step_3_frequency, step_4_export
+from wizard_steps import (
+    step_1_affirmations,
+    step_2_background,
+    step_3_frequency,
+    step_4_export,
+)
+from wizard_steps.wizard_state import initialize_wizard_state, reset_wizard_state
 
 # Optional MP3 export dependency check
 try:
@@ -71,7 +60,9 @@ class QuickWizard:
     # --- State Synchronization Callbacks ---
     def sync_affirmation_text(self):
         # This might be less needed now with direct state binding, but keep for potential explicit sync
-        st.session_state.wizard_affirmation_text = st.session_state.get("wizard_affirm_text_area", "")
+        st.session_state.wizard_affirmation_text = st.session_state.get(
+            "wizard_affirm_text_area", ""
+        )
         if st.session_state.get("wizard_affirmation_source") == "text":
             st.session_state.wizard_affirmation_audio = None
             st.session_state.wizard_affirmation_sr = None
@@ -144,19 +135,35 @@ class QuickWizard:
             # <<< MODIFIED: Use imported constants >>>
             eff_affirm_speed = QUICK_SUBLIMINAL_PRESET_SPEED
             eff_affirm_volume = QUICK_SUBLIMINAL_PRESET_VOLUME
-            logger.info("Applying Quick Wizard preset settings (Speed/Volume) to affirmations.")
+            logger.info(
+                "Applying Quick Wizard preset settings (Speed/Volume) to affirmations."
+            )
         else:
             eff_affirm_speed = 1.0  # Original speed
             eff_affirm_volume = 1.0  # Original volume (will be masked by background)
-            logger.info("Using original speed/volume for affirmations (Quick Settings disabled).")
+            logger.info(
+                "Using original speed/volume for affirmations (Quick Settings disabled)."
+            )
         # --- End Affirmation Speed/Volume Determination ---
 
         export_format = st.session_state.get("wizard_export_format", "wav").lower()
 
         # Prepare tuples for mixer function
-        affirmation_tuple = (affirmation_audio_data, affirmation_sr) if affirmation_audio_data is not None and affirmation_sr is not None else None
-        background_tuple = (background_audio_data, background_sr) if background_audio_data is not None and background_sr is not None else None
-        frequency_tuple = (frequency_audio_data, frequency_sr) if frequency_audio_data is not None and frequency_sr is not None else None
+        affirmation_tuple = (
+            (affirmation_audio_data, affirmation_sr)
+            if affirmation_audio_data is not None and affirmation_sr is not None
+            else None
+        )
+        background_tuple = (
+            (background_audio_data, background_sr)
+            if background_audio_data is not None and background_sr is not None
+            else None
+        )
+        frequency_tuple = (
+            (frequency_audio_data, frequency_sr)
+            if frequency_audio_data is not None and frequency_sr is not None
+            else None
+        )
 
         if affirmation_tuple is None:
             st.session_state.wizard_export_error = "Affirmation audio is missing."
@@ -183,7 +190,9 @@ class QuickWizard:
                     raise ValueError("Mixing process resulted in empty or None audio.")
 
                 mix_duration_s = len(full_mix) / GLOBAL_SR if GLOBAL_SR > 0 else 0
-                logger.info(f"Mixing successful. Final mix length: {mix_duration_s:.2f} seconds.")
+                logger.info(
+                    f"Mixing successful. Final mix length: {mix_duration_s:.2f} seconds."
+                )
 
                 # Export to selected format
                 if export_format == "wav":
@@ -192,14 +201,25 @@ class QuickWizard:
                         st.session_state.wizard_export_buffer = export_buffer
                         logger.info("Wizard WAV mix generated.")
                     else:
-                        raise ValueError("Failed to save WAV mix to buffer (empty buffer).")
+                        raise ValueError(
+                            "Failed to save WAV mix to buffer (empty buffer)."
+                        )
                 elif export_format == "mp3" and PYDUB_AVAILABLE:
                     try:
                         logger.info("Wizard converting full mix to MP3...")
                         full_mix_clipped = np.clip(full_mix, -1.0, 1.0)
                         audio_int16 = (full_mix_clipped * 32767).astype(np.int16)
-                        channels = 2 if audio_int16.ndim > 1 and audio_int16.shape[1] == 2 else 1
-                        segment = AudioSegment(data=audio_int16.tobytes(), sample_width=audio_int16.dtype.itemsize, frame_rate=GLOBAL_SR, channels=channels)
+                        channels = (
+                            2
+                            if audio_int16.ndim > 1 and audio_int16.shape[1] == 2
+                            else 1
+                        )
+                        segment = AudioSegment(
+                            data=audio_int16.tobytes(),
+                            sample_width=audio_int16.dtype.itemsize,
+                            frame_rate=GLOBAL_SR,
+                            channels=channels,
+                        )
                         if channels == 1:
                             segment = segment.set_channels(2)
                             logger.info("Converted mono mix to stereo for MP3 export.")
@@ -213,12 +233,18 @@ class QuickWizard:
                             raise ValueError("MP3 export resulted in an empty buffer.")
                     except Exception as e_mp3:
                         logger.exception("Wizard failed to export mix as MP3.")
-                        st.session_state.wizard_export_error = f"MP3 Export Failed: {e_mp3}. Ensure ffmpeg is installed."
+                        st.session_state.wizard_export_error = (
+                            f"MP3 Export Failed: {e_mp3}. Ensure ffmpeg is installed."
+                        )
                 elif export_format == "mp3" and not PYDUB_AVAILABLE:
-                    st.session_state.wizard_export_error = "MP3 export requires 'pydub' and 'ffmpeg'."
+                    st.session_state.wizard_export_error = (
+                        "MP3 export requires 'pydub' and 'ffmpeg'."
+                    )
                     logger.error(st.session_state.wizard_export_error)
                 else:
-                    st.session_state.wizard_export_error = f"Unsupported export format '{export_format}'."
+                    st.session_state.wizard_export_error = (
+                        f"Unsupported export format '{export_format}'."
+                    )
                     logger.error(st.session_state.wizard_export_error)
             except Exception as e:
                 logger.exception("Error during wizard mix/save.")
@@ -233,7 +259,10 @@ class QuickWizard:
         steps_display = ["Affirmations", "Background", "Frequency", "Export"]
         progress_step = max(1, min(step, len(steps_display)))
         try:
-            st.progress((progress_step) / len(steps_display), text=f"Step {progress_step}: {steps_display[progress_step - 1]}")
+            st.progress(
+                (progress_step) / len(steps_display),
+                text=f"Step {progress_step}: {steps_display[progress_step - 1]}",
+            )
         except IndexError:
             st.progress(0.0)
             logger.warning(f"Progress bar step index out of range: {progress_step}")

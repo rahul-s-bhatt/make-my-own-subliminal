@@ -12,51 +12,53 @@ import streamlit.components.v1 as components  # Import components
 from PIL import Image
 
 # --- Keep imports needed for initial setup ---
-from config import FAVICON_PATH
+# <<< MODIFIED: Removed unused theme imports, ensured PATERON_URL is imported >>>
+from config import FAVICON_PATH, GA_MEASUREMENT_ID, GOOGLE_FORM_URL, PATERON_URL
 from utils import setup_logging
 
 # --- Early Setup: Logging and Page Config ---
-setup_logging()
-logger = logging.getLogger(__name__)  # Get logger for this main module
+logger = logging.getLogger(__name__)
 
-# Configure Streamlit page
+# --- Determine Theme for Page Config ---
+# Theme preference is stored, but applied via OS/default unless CSS is used
+selected_theme_name = st.session_state.get("selected_theme", "System")
+
+# --- Configure Streamlit page FIRST ---
 try:
     page_icon = Image.open(FAVICON_PATH)
 except FileNotFoundError:
     logger.warning(f"Favicon not found at {FAVICON_PATH}. Using default.")
-    page_icon = "🧠"  # Default emoji icon
+    page_icon = "🧠"
 except Exception as e:
     logger.error(f"Error loading favicon: {e}")
     page_icon = "🧠"
 
-# --- Set Page Config FIRST ---
-st.set_page_config(layout="wide", page_title="MindMorph - Subliminal Editor", page_icon=page_icon)
+st.set_page_config(
+    layout="wide",
+    page_title="MindMorph - Subliminal Editor",
+    page_icon=page_icon,
+)
+
+# --- Now Setup Logging ---
+setup_logging()
+logger.info(f"Theme preference set to: {selected_theme_name}")
+
 
 # --- ADD GOOGLE ANALYTICS TAG ---
-# Replace 'YOUR_GA_MEASUREMENT_ID' with your actual Google Analytics Measurement ID
-GA_MEASUREMENT_ID = "G-B5LWHH5H7N"
-
-# Google Analytics gtag.js code snippet
-# This injects the necessary JavaScript into the app's HTML head on each run.
-# It initializes Google Analytics tracking.
-google_analytics_code = f"""
-    <script async src="https://www.googletagmanager.com/gtag/js?id={GA_MEASUREMENT_ID}"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){{dataLayer.push(arguments);}}
-      gtag('js', new Date());
-
-      gtag('config', '{GA_MEASUREMENT_ID}');
-    </script>
-"""
-# Inject the code into the app's <head>
-# Using st.markdown with unsafe_allow_html=True is a common way,
-# ensure it's placed where it runs on every interaction, like here.
-# Note: st.html() injects into the body, but early injection works for GA.
-# For guaranteed head injection, Streamlit Components or custom templates might be needed,
-# but this method is standard for direct script modification.
-components.html(google_analytics_code, height=0)  # Use components.html to inject raw HTML/JS
-logger.info(f"Injected Google Analytics tag for ID: {GA_MEASUREMENT_ID}")
+if not GA_MEASUREMENT_ID or GA_MEASUREMENT_ID == "YOUR_GA_MEASUREMENT_ID_HERE":  # Check for placeholder
+    logger.warning("Google Analytics Measurement ID is not set in config.py.")
+else:
+    google_analytics_code = f"""
+        <script async src="https://www.googletagmanager.com/gtag/js?id={GA_MEASUREMENT_ID}"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){{dataLayer.push(arguments);}}
+          gtag('js', new Date());
+          gtag('config', '{GA_MEASUREMENT_ID}');
+        </script>
+    """
+    components.html(google_analytics_code, height=0)
+    logger.info(f"Injected Google Analytics tag for configured ID.")
 # --- END GOOGLE ANALYTICS TAG ---
 
 
@@ -66,22 +68,54 @@ def reset_advanced_editor_state():
     logger.info("Resetting Advanced Editor state.")
     keys_to_delete = [
         "app_state",
-        "tts_generator",  # Reset TTS generator instance if created per session
+        "tts_generator",
         "project_handler",
         "ui_manager",
         "app_mode",
-        "selected_track_id",  # Example key, add others managed by AppState/UIManager
-        "tracks",  # Example key from AppState
-        "project_loaded",  # Example key
+        "selected_track_id",
+        "tracks",
+        "project_loaded",
         "export_buffer",
         "preview_audio_data",
-        # Add any other session state keys specific to the advanced editor
-        "selected_workflow",  # Also reset workflow selection
+        "selected_workflow",
+        # Expansion/Undo states
+        "sidebar_expansion_result",
+        "sidebar_expansion_truncated",
+        "sidebar_affirm_original_text",
+        "sidebar_affirm_text_pending_update",
+        "sidebar_affirm_truncated_pending",
+        # Wizard states
+        "wizard_affirm_text_area",
+        "wizard_original_affirmation_text",
+        "wizard_affirm_text_pending_update",
+        "wizard_affirm_truncated_pending",
+        # Add other wizard keys if necessary
+        "wizard_step",
+        "wizard_affirmation_audio",
+        "wizard_affirmation_sr",
+        "wizard_affirmation_source",
+        "wizard_background_choice",
+        "wizard_background_choice_label",
+        "wizard_background_audio",
+        "wizard_background_sr",
+        "wizard_background_volume",
+        "wizard_background_noise_type",
+        "wizard_frequency_choice",
+        "wizard_frequency_audio",
+        "wizard_frequency_sr",
+        "wizard_frequency_volume",
+        "wizard_output_filename",
+        "wizard_export_format",
+        "wizard_export_buffer",
+        "wizard_export_error",
     ]
+    # Keep theme selection during reset
+    # keys_to_delete.append("selected_theme")
+
     for key in keys_to_delete:
         if key in st.session_state:
             del st.session_state[key]
-            logger.debug(f"Deleted advanced editor session state key: {key}")
+            # logger.debug(f"Deleted session state key: {key}") # Optional debug
 
     logger.info("Advanced Editor state reset complete.")
 
@@ -101,13 +135,12 @@ def main():
     if st.session_state.selected_workflow is None:
         st.title("🧠 Welcome to MindMorph!")
         st.subheader("Choose how you want to create your subliminal audio:")
-        st.markdown("---")  # Add a separator
+        st.markdown("---")
 
-        col1, col2 = st.columns(2, gap="large")  # Add gap between columns
+        col1, col2 = st.columns(2, gap="large")
 
         with col1:
             st.markdown("### ✨ Quick Create Wizard")
-            # --- Adjusted Description ---
             st.markdown(
                 """
                 Get started quickly with a simple, step-by-step process.
@@ -118,10 +151,9 @@ def main():
                 - Fixed settings for speed/volume for easy creation.
                 """
             )
-            st.markdown("")  # Add some space
+            st.markdown("")
             if st.button("Start Wizard", key="start_wizard_button", use_container_width=True, type="primary"):
                 st.session_state.selected_workflow = "wizard"
-                # Initialize wizard state if needed
                 from wizard_state import initialize_wizard_state
 
                 initialize_wizard_state()
@@ -129,7 +161,6 @@ def main():
 
         with col2:
             st.markdown("### 🎚️ Advanced Editor")
-            # --- Adjusted Description ---
             st.markdown(
                 """
                 Unlock full control over your subliminal creation.
@@ -140,14 +171,38 @@ def main():
                 - Save and load your project files for later use.
                 """
             )
-            st.markdown("")  # Add some space
+            st.markdown("")
             if st.button("Open Advanced Editor", key="start_advanced_button", use_container_width=True):
                 st.session_state.selected_workflow = "advanced"
                 if "app_mode" not in st.session_state:
-                    st.session_state.app_mode = "Easy"  # Default advanced mode
+                    st.session_state.app_mode = "Easy"
                 st.rerun()
 
-        st.markdown("---")  # Add another separator
+        st.markdown("---")
+
+        # --- ADD PATREON SUPPORT BUTTON ---
+        st.markdown("#### ❤️ Support MindMorph")
+        st.markdown("If you find MindMorph useful, please consider supporting its development on Patreon. Your support helps keep the tool free and allows for new features!")
+
+        # Use PATERON_URL from config
+        # Check if the URL is the placeholder or empty
+        if not PATERON_URL or PATERON_URL == "YOUR_PATERON_URL_HERE":  # Adjust placeholder if needed
+            logger.warning("Patreon URL not configured in config.py")
+            # Optionally display a message or hide the button
+            # st.warning("Patreon link not configured.")
+        else:
+            # Use columns to center the button or adjust its width
+            col_support_1, col_support_2, col_support_3 = st.columns([1, 1.5, 1])  # Adjust ratios as needed
+            with col_support_2:
+                st.link_button(
+                    "💖 Join Patreon",
+                    url=PATERON_URL,  # Use the imported constant
+                    help="Support MindMorph development (opens in new tab).",
+                    use_container_width=True,
+                    type="secondary",  # Or "primary" if you want more emphasis
+                )
+        st.markdown("---")
+        # --- END PATREON SUPPORT BUTTON ---
 
     # --- Run Selected Workflow ---
     elif st.session_state.selected_workflow == "wizard":
@@ -159,7 +214,7 @@ def main():
             st.session_state.tts_generator_wizard = TTSGenerator()
 
         wizard = QuickWizard(st.session_state.tts_generator_wizard)
-        wizard.render_wizard()
+        wizard.render_wizard()  # Wizard UI takes over main area
 
     elif st.session_state.selected_workflow == "advanced":
         logger.info("Running Advanced Editor workflow.")
@@ -168,27 +223,22 @@ def main():
         from tts_generator import TTSGenerator
         from ui_manager import UIManager
 
-        # Initialize Core Components for Advanced Mode using session state
+        # Initialize Core Components
         if "app_state" not in st.session_state:
             st.session_state.app_state = AppState()
         if "tts_generator" not in st.session_state:
             st.session_state.tts_generator = TTSGenerator()
         if "project_handler" not in st.session_state:
-            # <<< MODIFIED: Removed tts_generator argument >>>
             st.session_state.project_handler = ProjectHandler(st.session_state.app_state)
         if "ui_manager" not in st.session_state:
-            # Pass the reset function to the UI manager if needed, or keep it here
             st.session_state.ui_manager = UIManager(st.session_state.app_state, st.session_state.tts_generator)
 
-        # Handle Project Loading (Project loading is currently removed/disabled)
-        # st.session_state.project_handler.load_project() # Keep commented out if loading is disabled
-
-        # --- Render Top Bar for Advanced Editor (Improved Layout) ---
+        # --- Render Top Bar for Advanced Editor ---
         st.title("🧠 MindMorph - Advanced Editor")
 
-        header_cols = st.columns([4, 3])  # Adjust ratios as needed
+        header_cols = st.columns([4, 1])
         with header_cols[0]:
-            # Mode Selector with Explanation
+            # Mode Selector
             if "app_mode" not in st.session_state:
                 st.session_state.app_mode = "Easy"
             mode_options = ["Easy", "Advanced"]
@@ -203,15 +253,13 @@ def main():
                 index=current_mode_index,
                 key="mode_selector_radio",
                 horizontal=True,
-                # label_visibility="collapsed", # Keep label for clarity
                 help="Choose between a simplified view (Easy) or access to all features (Advanced).",
             )
-            st.caption("Easy mode simplifies the interface; Advanced mode shows all track controls.")  # Explanation
+            st.caption("Easy mode simplifies the interface; Advanced mode shows all track controls.")
 
             if selected_mode != st.session_state.app_mode:
                 logger.info(f"Advanced editor mode changed from '{st.session_state.app_mode}' to '{selected_mode}'")
                 st.session_state.app_mode = selected_mode
-                # Clear potentially mode-dependent cached data
                 if "export_buffer" in st.session_state:
                     del st.session_state.export_buffer
                 if "preview_audio_data" in st.session_state:
@@ -219,20 +267,17 @@ def main():
                 st.rerun()
 
         with header_cols[1]:
-            # "Back to Home" Button - aligned better
-            st.markdown('<div style="height: 2.5em;"></div>', unsafe_allow_html=True)  # Add vertical space to align with radio button
+            # Back to Home Button
             if st.button("🏠 Back to Home", key="advanced_back_home", help="Exit Advanced Editor and return to workflow selection.", use_container_width=True):
-                reset_advanced_editor_state()  # Call the reset function
-                st.rerun()  # Rerun to show the home screen
+                reset_advanced_editor_state()
+                st.rerun()
 
         st.markdown("---")
 
-        # --- Render Main UI Sections using UIManager ---
-        # Pass the current mode to the UI Manager so it can adjust the display
+        # Render Main UI Sections using UIManager
         st.session_state.ui_manager.render_ui(mode=st.session_state.app_mode)
 
     else:
-        # Should not happen, but reset if state is invalid
         logger.warning(f"Invalid selected_workflow state: {st.session_state.selected_workflow}. Resetting.")
         st.session_state.selected_workflow = None
         st.rerun()

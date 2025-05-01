@@ -13,8 +13,6 @@ import streamlit as st
 # Import necessary components from other modules
 from app_state import AppState, TrackDataDict, TrackID
 from audio_io import save_audio_to_temp_file
-
-# <<< MODIFIED: Import from audio_preview >>>
 from audio_preview import get_preview_audio
 
 # <<< Type hint for AudioData >>>
@@ -25,7 +23,9 @@ except ImportError:
 
 from config import (
     GLOBAL_SR,
-    PREVIEW_DURATION_S,
+    PREVIEW_DURATION_S,  # Import the constant
+    QUICK_SUBLIMINAL_PRESET_SPEED,
+    QUICK_SUBLIMINAL_PRESET_VOLUME,
     TRACK_TYPE_AFFIRMATION,
     ULTRASONIC_TARGET_FREQ,
 )
@@ -83,7 +83,8 @@ class TrackPreviewUI:
                 app_mode = st.session_state.get("app_mode", "Easy")
                 source_info = track_data.get("source_info")
 
-                st.markdown("**Preview (First 60s with Effects Applied)**")
+                # <<< MODIFIED: Use PREVIEW_DURATION_S constant >>>
+                st.markdown(f"**Preview (First {PREVIEW_DURATION_S}s with Effects Applied)**")
                 display_path = None
                 preview_cache_hit = False
 
@@ -147,13 +148,17 @@ class TrackPreviewUI:
                     if not np.isclose(pan, track_data.get("pan", 0.0)):
                         self.app_state.update_track_param(track_id, "pan", pan)
 
+                # --- Quick Subliminal Settings Button ---
                 if track_data.get("track_type") == TRACK_TYPE_AFFIRMATION:
-                    if st.button("⚡ Quick Subliminal Settings", key=f"subliminalize_preset_{track_id}", help="Applies Speed=10x, Volume=0.05."):
+                    preset_help_text = f"Applies Speed={QUICK_SUBLIMINAL_PRESET_SPEED}x, Volume={QUICK_SUBLIMINAL_PRESET_VOLUME}."
+                    if st.button("⚡ Quick Subliminal Settings", key=f"subliminalize_preset_{track_id}", help=preset_help_text):
                         logger.info(f"Subliminalize preset applied to track {track_id}")
-                        self.app_state.update_track_param(track_id, "speed_factor", 10.0)
-                        self.app_state.update_track_param(track_id, "volume", 0.05)
-                        st.toast("Speed set to 10x, Volume to 0.05. Click 'Update Preview'.", icon="⚡")
+                        self.app_state.update_track_param(track_id, "speed_factor", QUICK_SUBLIMINAL_PRESET_SPEED)
+                        self.app_state.update_track_param(track_id, "volume", QUICK_SUBLIMINAL_PRESET_VOLUME)
+                        toast_message = f"Speed set to {QUICK_SUBLIMINAL_PRESET_SPEED}x, Volume to {QUICK_SUBLIMINAL_PRESET_VOLUME}. Click 'Update Preview'."
+                        st.toast(toast_message, icon="⚡")
                         st.rerun()
+                # --- End Quick Subliminal Settings Button ---
 
                 if app_mode == "Advanced":
                     st.markdown("**Advanced Effects**")
@@ -238,10 +243,12 @@ class TrackPreviewUI:
 
                 st.markdown("---")
                 update_disabled = audio_snippet is None or audio_snippet.size == 0
+                # <<< MODIFIED: Use PREVIEW_DURATION_S constant in help text >>>
+                update_preview_help = f"Generate the {PREVIEW_DURATION_S}s preview using the snippet and current settings."
                 if st.button(
                     "⚙️ Update Preview",
                     key=f"update_track_preview_{track_id}",
-                    help="Generate the 60s preview using the snippet and current settings.",
+                    help=update_preview_help,
                     disabled=update_disabled,
                     use_container_width=True,
                 ):
@@ -265,6 +272,7 @@ class TrackPreviewUI:
         with st.spinner("Generating preview audio..."):
             try:
                 # Pass track_data which contains snippet and params
+                # <<< MODIFIED: Use PREVIEW_DURATION_S constant >>>
                 preview_audio = get_preview_audio(track_data, preview_duration_s=PREVIEW_DURATION_S)
 
                 if preview_audio is not None and preview_audio.size > 0:

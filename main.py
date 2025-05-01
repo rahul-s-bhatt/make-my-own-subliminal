@@ -8,6 +8,7 @@ import logging
 import os
 
 import streamlit as st
+import streamlit.components.v1 as components  # Import components
 from PIL import Image
 
 # --- Keep imports needed for initial setup ---
@@ -28,7 +29,35 @@ except Exception as e:
     logger.error(f"Error loading favicon: {e}")
     page_icon = "🧠"
 
+# --- Set Page Config FIRST ---
 st.set_page_config(layout="wide", page_title="MindMorph - Subliminal Editor", page_icon=page_icon)
+
+# --- ADD GOOGLE ANALYTICS TAG ---
+# Replace 'YOUR_GA_MEASUREMENT_ID' with your actual Google Analytics Measurement ID
+GA_MEASUREMENT_ID = "G-B5LWHH5H7N"
+
+# Google Analytics gtag.js code snippet
+# This injects the necessary JavaScript into the app's HTML head on each run.
+# It initializes Google Analytics tracking.
+google_analytics_code = f"""
+    <script async src="https://www.googletagmanager.com/gtag/js?id={GA_MEASUREMENT_ID}"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){{dataLayer.push(arguments);}}
+      gtag('js', new Date());
+
+      gtag('config', '{GA_MEASUREMENT_ID}');
+    </script>
+"""
+# Inject the code into the app's <head>
+# Using st.markdown with unsafe_allow_html=True is a common way,
+# ensure it's placed where it runs on every interaction, like here.
+# Note: st.html() injects into the body, but early injection works for GA.
+# For guaranteed head injection, Streamlit Components or custom templates might be needed,
+# but this method is standard for direct script modification.
+components.html(google_analytics_code, height=0)  # Use components.html to inject raw HTML/JS
+logger.info(f"Injected Google Analytics tag for ID: {GA_MEASUREMENT_ID}")
+# --- END GOOGLE ANALYTICS TAG ---
 
 
 # --- Helper Function to Reset Advanced State ---
@@ -47,23 +76,17 @@ def reset_advanced_editor_state():
         "export_buffer",
         "preview_audio_data",
         # Add any other session state keys specific to the advanced editor
+        "selected_workflow",  # Also reset workflow selection
     ]
     for key in keys_to_delete:
         if key in st.session_state:
             del st.session_state[key]
             logger.debug(f"Deleted advanced editor session state key: {key}")
 
-    # Crucially, reset the workflow selection
-    if "selected_workflow" in st.session_state:
-        del st.session_state["selected_workflow"]
-        logger.debug("Deleted session state key: selected_workflow")
-
     logger.info("Advanced Editor state reset complete.")
 
 
 # --- Main Application Logic ---
-
-
 def main():
     """Main function to run the Streamlit application."""
     logger.info("=====================================================")
@@ -157,8 +180,8 @@ def main():
             # Pass the reset function to the UI manager if needed, or keep it here
             st.session_state.ui_manager = UIManager(st.session_state.app_state, st.session_state.tts_generator)
 
-        # Handle Project Loading
-        st.session_state.project_handler.load_project()
+        # Handle Project Loading (Project loading is currently removed/disabled)
+        # st.session_state.project_handler.load_project() # Keep commented out if loading is disabled
 
         # --- Render Top Bar for Advanced Editor (Improved Layout) ---
         st.title("🧠 MindMorph - Advanced Editor")

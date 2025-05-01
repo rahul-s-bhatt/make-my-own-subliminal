@@ -12,6 +12,7 @@ from typing import Any, Dict
 
 import numpy as np
 import streamlit as st
+import streamlit.components.v1 as components  # Import components for JS injection
 
 # Import necessary components from other modules
 from app_state import AppState
@@ -130,7 +131,7 @@ class UIManager:
             elif export_disabled:
                 export_help = "Add tracks before exporting."
             if st.button(export_button_label, key="master_export_mix_button", use_container_width=True, help=export_help, disabled=export_disabled):
-                self._handle_export_click()
+                self._handle_export_click()  # Call the handler which now includes event tracking
             if "export_buffer" in st.session_state and st.session_state.export_buffer:
                 file_ext = st.session_state.get("export_file_ext", "wav")
                 download_filename = f"{st.session_state.get('export_filename_sanitized', default_filename)}.{file_ext}"
@@ -199,6 +200,9 @@ class UIManager:
         if not tracks:
             st.warning("No tracks loaded to export.")
             return
+
+        export_successful = False  # Flag to track if export succeeded
+
         with st.spinner(f"Generating full mix ({export_format.upper()})... This may take time."):
             try:
                 # <<< MODIFIED: Removed app_state argument >>>
@@ -213,6 +217,7 @@ class UIManager:
                     logger.info(f"Actual final mix duration: {st.session_state.calculated_mix_duration_s:.2f}s")
                 else:
                     st.session_state.calculated_mix_duration_s = None
+
                 if full_mix is not None and full_mix.size > 0:
                     if export_format == "wav":
                         export_buffer = save_audio_to_bytesio(full_mix, GLOBAL_SR)
@@ -220,6 +225,7 @@ class UIManager:
                             st.session_state.export_buffer = export_buffer
                             st.session_state.export_file_ext = "wav"
                             logger.info("Full WAV mix generated.")
+                            export_successful = True  # Mark as successful
                         else:
                             raise ValueError("Failed to save WAV mix to buffer.")
                     elif export_format == "mp3" and PYDUB_AVAILABLE:
@@ -239,6 +245,7 @@ class UIManager:
                                 st.session_state.export_buffer = mp3_buffer
                                 st.session_state.export_file_ext = "mp3"
                                 logger.info("Full MP3 mix generated.")
+                                export_successful = True  # Mark as successful
                             else:
                                 raise ValueError("MP3 export resulted in empty buffer.")
                         except Exception as e_mp3:
@@ -246,6 +253,7 @@ class UIManager:
                             st.error(f"MP3 Export Failed: {e_mp3}. Ensure ffmpeg is installed.")
                             self._clear_export_buffer()
                     else:
+                        # Handle unsupported format or missing dependency
                         if export_format == "mp3":
                             logger.error("MP3 export selected, but 'pydub' missing.")
                             st.error("MP3 export requires 'pydub' and 'ffmpeg'.")
@@ -261,12 +269,39 @@ class UIManager:
                     logger.error("Full mix generation failed (returned None).")
                     st.error("Failed to generate the final mix.")
                     self._clear_export_buffer()
+
             except Exception as e:
                 logger.exception("Error during full mix generation or export.")
                 st.error(f"Failed to generate or export mix: {e}")
                 self._clear_export_buffer()
-        if "export_buffer" in st.session_state and st.session_state.export_buffer:
+
+        # --- Send GA Event ONLY if Export was Successful ---
+        if export_successful:
+            logger.info(f"Export successful. Sending 'mix_exported' event to Google Analytics for format: {export_format}")
+            # Construct the JavaScript code to send the event
+            ga_event_js = f"""
+                <script>
+                    if (typeof gtag === 'function') {{
+                        gtag('event', 'mix_exported', {{
+                            'event_category': 'engagement',
+                            'event_label': '{export_format.upper()}',
+                            'value': 1
+                        }});
+                        console.log("GA Event Sent: mix_exported ({export_format.upper()})");
+                    }} else {{
+                        console.error("gtag function not found. GA event not sent.");
+                    }}
+                </script>
+            """
+            # Inject the JavaScript using components.html
+            try:
+                components.html(ga_event_js, height=0)
+            except Exception as e_comp:
+                logger.error(f"Failed to inject GA event script using components.html: {e_comp}")
+
+            # Rerun to show the download button
             st.rerun()
+        # --- End GA Event Sending ---
 
     def render_preview_audio_player(self):
         """Displays the master preview audio player if preview data exists."""

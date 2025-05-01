@@ -86,6 +86,25 @@ class SidebarManager:
             # self._render_save_load() # <<< Call REMOVED >>>
             # st.markdown("---")
 
+            # --- ADD FEEDBACK BUTTON ---
+            st.markdown("### 💬 Feedback")
+            st.caption("Help us improve MindMorph!")
+            # !!! REPLACE THIS URL WITH YOUR ACTUAL GOOGLE FORM LINK !!!
+            google_form_url = "https://forms.gle/eXGtvAzEoEZCHpK69"
+            if google_form_url == "YOUR_GOOGLE_FORM_URL_HERE":
+                st.warning("Remember to replace the placeholder URL for the feedback form in `sidebar_manager.py`!")
+            else:
+                st.link_button(
+                    "📝 Provide Feedback",
+                    url=google_form_url,
+                    help="Opens a Google Form in a new tab to share your experience.",
+                    use_container_width=True,
+                    type="secondary",  # Use secondary style for less emphasis than primary actions
+                )
+                logger.debug(f"Rendered feedback button linking to: {google_form_url}")
+            st.markdown("---")
+            # --- END FEEDBACK BUTTON ---
+
             # --- Final Info Message ---
             st.info("Edit track details and effects in the main panel.")
 

@@ -23,7 +23,6 @@ AFFIRM_SOURCE_RADIO_KEY = "wizard_affirm_source_radio"
 AFFIRM_TEXT_AREA_KEY = "wizard_affirm_text_area"
 AFFIRM_FILE_UPLOADER_KEY = "wizard_affirm_file_uploader"
 AFFIRM_ORIGINAL_TEXT_KEY = "wizard_original_affirmation_text"
-# <<< ADDED: Keys for pending update mechanism >>>
 AFFIRM_PENDING_UPDATE_KEY = "wizard_affirm_text_pending_update"
 AFFIRM_PENDING_TRUNCATED_KEY = "wizard_affirm_truncated_pending"
 
@@ -142,7 +141,7 @@ def render_step_1(wizard):  # Pass the wizard instance
                                 max_chars=MAX_AFFIRMATION_CHARS,
                                 multiplier=3,
                             )
-                            # <<< MODIFIED: Store result in PENDING state >>>
+                            # Store result in PENDING state
                             st.session_state[AFFIRM_PENDING_UPDATE_KEY] = expanded_text
                             st.session_state[AFFIRM_PENDING_TRUNCATED_KEY] = truncated
                             logger.info(f"Wizard affirmation expansion complete. Staged for next run. Truncated: {truncated}")
@@ -162,7 +161,7 @@ def render_step_1(wizard):  # Pass the wizard instance
                 if st.button("↩️ Undo Expansion", key="wizard_undo_expansion", disabled=undo_disabled, use_container_width=True, help="Revert to the text before expansion."):
                     original_text = st.session_state.get(AFFIRM_ORIGINAL_TEXT_KEY)
                     if original_text is not None:
-                        # <<< MODIFIED: Stage the original text as a pending update >>>
+                        # Stage the original text as a pending update
                         st.session_state[AFFIRM_PENDING_UPDATE_KEY] = original_text
                         st.session_state[AFFIRM_PENDING_TRUNCATED_KEY] = False  # Reset truncated status
                         # Clear the stored original text backup immediately
@@ -178,22 +177,27 @@ def render_step_1(wizard):  # Pass the wizard instance
             uploaded_audio_file = st.file_uploader(
                 "Select an audio file (.wav, .mp3)",
                 type=["wav", "mp3"],
-                key="wizard_affirm_audio_uploader",
+                key="wizard_affirm_audio_uploader",  # Unique key for this uploader
                 label_visibility="collapsed",
                 help=f"Upload your pre-recorded affirmations (Max {MAX_UPLOAD_SIZE_MB}MB).",
             )
             if uploaded_audio_file:
                 if uploaded_audio_file.size > MAX_UPLOAD_SIZE_BYTES:
                     st.error(f"❌ File '{uploaded_audio_file.name}' ({uploaded_audio_file.size / (1024 * 1024):.1f} MB) exceeds the {MAX_UPLOAD_SIZE_MB} MB limit.")
-                    st.session_state.wizard_affirmation_audio = None
+                    st.session_state.wizard_affirmation_audio = None  # Clear state if invalid
                     st.session_state.wizard_affirmation_sr = None
                 else:
+                    # Process the uploaded audio file immediately for the wizard
                     with st.spinner(f"Processing '{uploaded_audio_file.name}'..."):
                         try:
+                            # Save temporarily to load with librosa
                             with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_audio_file.name)[1]) as tmp:
                                 tmp.write(uploaded_audio_file.getvalue())
                                 temp_file_path = tmp.name
-                            audio_data, sr = load_audio(temp_file_path, target_sr=GLOBAL_SR)
+
+                            audio_data, sr = load_audio(temp_file_path, target_sr=GLOBAL_SR)  # Resample to global SR
+
+                            # Clean up temp file
                             try:
                                 os.remove(temp_file_path)
                             except OSError:
@@ -204,6 +208,7 @@ def render_step_1(wizard):  # Pass the wizard instance
                                 st.session_state.wizard_affirmation_sr = sr
                                 st.success(f"✅ Loaded audio: '{uploaded_audio_file.name}' ({len(audio_data) / sr:.1f}s)")
                                 logger.info(f"Wizard Step 1: Loaded affirmation audio '{uploaded_audio_file.name}'")
+                                # Clear text state if audio is uploaded
                                 st.session_state[AFFIRM_TEXT_AREA_KEY] = ""
                                 st.session_state[AFFIRM_ORIGINAL_TEXT_KEY] = None
                                 st.session_state[AFFIRM_PENDING_UPDATE_KEY] = None  # Clear pending
@@ -218,6 +223,7 @@ def render_step_1(wizard):  # Pass the wizard instance
                             st.error(f"Error processing audio file: {e}")
                             st.session_state.wizard_affirmation_audio = None
                             st.session_state.wizard_affirmation_sr = None
+                            # Clean up temp file in case of error during processing
                             if "temp_file_path" in locals() and os.path.exists(temp_file_path):
                                 try:
                                     os.remove(temp_file_path)
@@ -241,7 +247,7 @@ def render_step_1(wizard):  # Pass the wizard instance
                             st.error(f"❌ Text in file '{uploaded_text_file.name}' is too long ({len(text_content)} chars). Maximum is {MAX_AFFIRMATION_CHARS}.")
                             st.session_state[AFFIRM_TEXT_AREA_KEY] = ""
                         else:
-                            # <<< MODIFIED: Stage the loaded text as a pending update >>>
+                            # Stage the loaded text as a pending update
                             st.session_state[AFFIRM_PENDING_UPDATE_KEY] = text_content
                             st.session_state[AFFIRM_PENDING_TRUNCATED_KEY] = False  # Reset truncated status
                             logger.info(f"Wizard Step 1: Staged text from file '{uploaded_text_file.name}' for update.")
@@ -263,10 +269,21 @@ def render_step_1(wizard):  # Pass the wizard instance
     st.divider()
 
     # --- Navigation ---
-    col_nav_1, col_nav_2 = st.columns([1, 1])
+    # Use 3 columns for Home, Back, Next
+    col_nav_1, col_nav_2, col_nav_3 = st.columns([1, 2, 2])  # Adjust ratios as needed
+
     with col_nav_1:
-        st.button("Back", key="wizard_step1_back", disabled=True, use_container_width=True)
+        # Add Back to Home button
+        if st.button("🏠 Back to Home", key="wizard_step1_home", use_container_width=True, help="Exit Wizard and return to main menu."):
+            wizard._reset_wizard_state()  # Call the reset method from the wizard instance
+            # st.rerun() is handled by reset_wizard_state indirectly
+
     with col_nav_2:
+        # Back button is not needed on Step 1
+        st.button("⬅️ Back", key="wizard_step1_back", disabled=True, use_container_width=True)
+
+    with col_nav_3:
+        # Validate input before allowing 'Next'
         next_disabled = True
         current_source = st.session_state.get("wizard_affirmation_source", "text")
         # Use the state key for text validation
@@ -293,7 +310,8 @@ def render_step_1(wizard):  # Pass the wizard instance
                                 st.session_state.wizard_affirmation_audio = audio_data
                                 st.session_state.wizard_affirmation_sr = sr
                                 logger.info("Wizard TTS generation successful.")
-                                st.session_state[AFFIRM_ORIGINAL_TEXT_KEY] = None  # Clear backup
+                                # Clear original text backup after successful generation/navigation
+                                st.session_state[AFFIRM_ORIGINAL_TEXT_KEY] = None
                                 st.session_state[AFFIRM_PENDING_UPDATE_KEY] = None  # Clear pending
                                 st.session_state[AFFIRM_PENDING_TRUNCATED_KEY] = False
                                 wizard._go_to_step(2)
@@ -305,7 +323,8 @@ def render_step_1(wizard):  # Pass the wizard instance
                 else:
                     st.error("Cannot proceed without affirmation text.")
             elif st.session_state.wizard_affirmation_audio is not None:
-                st.session_state[AFFIRM_ORIGINAL_TEXT_KEY] = None  # Clear backup
+                # Clear original text backup when navigating with existing audio
+                st.session_state[AFFIRM_ORIGINAL_TEXT_KEY] = None
                 st.session_state[AFFIRM_PENDING_UPDATE_KEY] = None  # Clear pending
                 st.session_state[AFFIRM_PENDING_TRUNCATED_KEY] = False
                 wizard._go_to_step(2)

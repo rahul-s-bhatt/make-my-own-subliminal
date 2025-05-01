@@ -17,6 +17,8 @@ DEFAULT_FREQ_VOLUME = 0.2
 DEFAULT_NOISE_TYPE = "White Noise"
 DEFAULT_FILENAME = "my_quick_subliminal"
 DEFAULT_EXPORT_FORMAT = "WAV"
+# <<< ADDED: Default for applying quick settings >>>
+DEFAULT_APPLY_QUICK_SETTINGS = True  # Keep current behavior as default
 
 
 def initialize_wizard_state():
@@ -26,7 +28,7 @@ def initialize_wizard_state():
         "wizard_affirmation_text": "",
         "wizard_affirmation_audio": None,
         "wizard_affirmation_sr": None,
-        "wizard_affirmation_source": None,  # 'text', 'upload', None
+        "wizard_affirmation_source": None,  # 'text', 'upload_audio', 'upload_text'
         "wizard_background_choice": "none",  # 'upload', 'noise', 'none'
         "wizard_background_choice_label": "None (Skip)",  # For radio button index
         "wizard_background_audio": None,
@@ -39,8 +41,14 @@ def initialize_wizard_state():
         "wizard_frequency_volume": DEFAULT_FREQ_VOLUME,
         "wizard_output_filename": DEFAULT_FILENAME,
         "wizard_export_format": DEFAULT_EXPORT_FORMAT,
+        # <<< ADDED: State for quick settings toggle >>>
+        "wizard_apply_quick_settings": DEFAULT_APPLY_QUICK_SETTINGS,
         "wizard_export_buffer": None,
         "wizard_export_error": None,
+        # State for text area undo/pending update
+        "wizard_original_affirmation_text": None,
+        "wizard_affirm_text_pending_update": None,
+        "wizard_affirm_truncated_pending": False,
     }
     for key, default_value in state_defaults.items():
         if key not in st.session_state:

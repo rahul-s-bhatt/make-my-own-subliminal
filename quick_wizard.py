@@ -20,10 +20,10 @@ from audio_generators import (
 )
 from audio_io import load_audio, save_audio_to_bytesio
 
-# <<< MODIFIED: Import mix_wizard_tracks from audio_mixers >>>
+# Import mix_wizard_tracks from audio_mixers
 from audio_mixers import mix_wizard_tracks
 
-# <<< Type hint for AudioData >>>
+# Type hint for AudioData
 try:
     from audio_effects_pipeline import AudioData
 except ImportError:
@@ -34,6 +34,9 @@ from config import (
     MAX_AFFIRMATION_CHARS,
     MAX_AUDIO_DURATION_S,
     PROJECT_FILE_VERSION,
+    # <<< ADDED: Import preset constants >>>
+    QUICK_SUBLIMINAL_PRESET_SPEED,
+    QUICK_SUBLIMINAL_PRESET_VOLUME,
 )
 from tts_generator import TTSGenerator
 from utils import read_text_file
@@ -55,10 +58,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# --- Constants for Wizard ---
-WIZARD_AFFIRMATION_SPEED = 10.0
-WIZARD_AFFIRMATION_VOLUME = 0.10
-
 
 class QuickWizard:
     """Manages the state and UI rendering orchestration for the Quick Create Wizard."""
@@ -71,6 +70,7 @@ class QuickWizard:
 
     # --- State Synchronization Callbacks ---
     def sync_affirmation_text(self):
+        # This might be less needed now with direct state binding, but keep for potential explicit sync
         st.session_state.wizard_affirmation_text = st.session_state.get("wizard_affirm_text_area", "")
         if st.session_state.get("wizard_affirmation_source") == "text":
             st.session_state.wizard_affirmation_audio = None
@@ -78,12 +78,9 @@ class QuickWizard:
         logger.debug("Synced affirmation text state.")
 
     def clear_affirmation_upload_state(self):
-        if st.session_state.get("wizard_affirmation_source") == "upload":
-            st.session_state.wizard_affirmation_audio = None
-            st.session_state.wizard_affirmation_sr = None
-            st.session_state.wizard_affirmation_source = None
-            st.session_state.wizard_affirmation_text = ""
-            logger.debug("Cleared affirmation upload state.")
+        # Callback for file uploader on_change if needed
+        # Currently handled by radio button logic mostly
+        pass
 
     def sync_background_choice(self, choice_options: List[str]):
         selected_label = st.session_state.get("wizard_bg_choice_radio")
@@ -94,18 +91,19 @@ class QuickWizard:
             new_choice = "upload"
         elif selected_label == "Generate Noise":
             new_choice = "noise"
+
+        # Only clear audio if the *type* of choice changed (e.g., upload -> noise)
         if new_choice != st.session_state.get("wizard_background_choice"):
             st.session_state.wizard_background_audio = None
             st.session_state.wizard_background_sr = None
             logger.debug(f"Background choice changed to {new_choice}, cleared audio.")
+
         st.session_state.wizard_background_choice = new_choice
         st.session_state.wizard_background_choice_label = selected_label
 
     def clear_background_upload_state(self):
-        if st.session_state.get("wizard_background_choice") == "upload":
-            st.session_state.wizard_background_audio = None
-            st.session_state.wizard_background_sr = None
-            logger.debug("Cleared background upload state.")
+        # Callback for file uploader on_change if needed
+        pass
 
     # --- Navigation and Reset ---
     def _reset_wizard_state(self):
@@ -126,41 +124,68 @@ class QuickWizard:
         logger.info("Starting wizard export process.")
         st.session_state.wizard_export_buffer = None
         st.session_state.wizard_export_error = None
+
+        # Get base audio data
         affirmation_audio_data = st.session_state.get("wizard_affirmation_audio")
         affirmation_sr = st.session_state.get("wizard_affirmation_sr")
         background_audio_data = st.session_state.get("wizard_background_audio")
         background_sr = st.session_state.get("wizard_background_sr")
-        background_volume = st.session_state.get("wizard_background_volume", 0.7)
         frequency_audio_data = st.session_state.get("wizard_frequency_audio")
         frequency_sr = st.session_state.get("wizard_frequency_sr")
+
+        # Get volume settings
+        background_volume = st.session_state.get("wizard_background_volume", 0.7)
         frequency_volume = st.session_state.get("wizard_frequency_volume", 0.2)
+
+        # --- Determine Affirmation Speed/Volume based on Toggle ---
+        # <<< MODIFIED: Check state variable >>>
+        apply_quick_settings = st.session_state.get("wizard_apply_quick_settings", True)
+        if apply_quick_settings:
+            # <<< MODIFIED: Use imported constants >>>
+            eff_affirm_speed = QUICK_SUBLIMINAL_PRESET_SPEED
+            eff_affirm_volume = QUICK_SUBLIMINAL_PRESET_VOLUME
+            logger.info("Applying Quick Wizard preset settings (Speed/Volume) to affirmations.")
+        else:
+            eff_affirm_speed = 1.0  # Original speed
+            eff_affirm_volume = 1.0  # Original volume (will be masked by background)
+            logger.info("Using original speed/volume for affirmations (Quick Settings disabled).")
+        # --- End Affirmation Speed/Volume Determination ---
+
         export_format = st.session_state.get("wizard_export_format", "wav").lower()
+
+        # Prepare tuples for mixer function
         affirmation_tuple = (affirmation_audio_data, affirmation_sr) if affirmation_audio_data is not None and affirmation_sr is not None else None
         background_tuple = (background_audio_data, background_sr) if background_audio_data is not None and background_sr is not None else None
         frequency_tuple = (frequency_audio_data, frequency_sr) if frequency_audio_data is not None and frequency_sr is not None else None
+
         if affirmation_tuple is None:
             st.session_state.wizard_export_error = "Affirmation audio is missing."
             logger.error("Wizard export failed: Missing affirmation audio.")
             return
+
         logger.info("Wizard mixing tracks...")
         spinner_msg = f"Generating final mix ({export_format.upper()})..."
         with st.spinner(spinner_msg):
             try:
-                # Call mix_wizard_tracks from audio_mixers
+                # Pass effective speed/volume
                 full_mix = mix_wizard_tracks(
                     affirmation_audio=affirmation_tuple,
                     background_audio=background_tuple,
                     frequency_audio=frequency_tuple,
-                    affirmation_speed=WIZARD_AFFIRMATION_SPEED,
-                    affirmation_volume=WIZARD_AFFIRMATION_VOLUME,
+                    affirmation_speed=eff_affirm_speed,
+                    affirmation_volume=eff_affirm_volume,
                     background_volume=background_volume,
                     frequency_volume=frequency_volume,
                     target_sr=GLOBAL_SR,
                 )
+
                 if full_mix is None or full_mix.size == 0:
                     raise ValueError("Mixing process resulted in empty or None audio.")
+
                 mix_duration_s = len(full_mix) / GLOBAL_SR if GLOBAL_SR > 0 else 0
                 logger.info(f"Mixing successful. Final mix length: {mix_duration_s:.2f} seconds.")
+
+                # Export to selected format
                 if export_format == "wav":
                     export_buffer = save_audio_to_bytesio(full_mix, GLOBAL_SR)
                     if export_buffer and export_buffer.getbuffer().nbytes > 0:
@@ -203,7 +228,7 @@ class QuickWizard:
     def render_wizard(self):
         """Renders the current step of the wizard by calling the appropriate step function."""
         st.title("✨ MindMorph Quick Create Wizard")
-        initialize_wizard_state()
+        initialize_wizard_state()  # Ensure state exists
         step = st.session_state.get("wizard_step", 1)
         steps_display = ["Affirmations", "Background", "Frequency", "Export"]
         progress_step = max(1, min(step, len(steps_display)))
@@ -212,6 +237,8 @@ class QuickWizard:
         except IndexError:
             st.progress(0.0)
             logger.warning(f"Progress bar step index out of range: {progress_step}")
+
+        # Render the appropriate step UI
         if step == 1:
             step_1_affirmations.render_step_1(self)
         elif step == 2:

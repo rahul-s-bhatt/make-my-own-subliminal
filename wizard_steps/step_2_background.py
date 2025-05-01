@@ -4,21 +4,58 @@
 # ==========================================
 
 import logging
+import os  # Import os for path operations if needed
+import tempfile  # Import tempfile
 
 import streamlit as st
 
 # Import necessary components
 from audio_generators import generate_noise
 from audio_io import load_audio, save_audio_to_bytesio
-from config import GLOBAL_SR, MAX_AUDIO_DURATION_S
+from config import GLOBAL_SR, MAX_AUDIO_DURATION_S, MAX_UPLOAD_SIZE_BYTES, MAX_UPLOAD_SIZE_MB  # Import upload limits
 
 # Constants
-WIZARD_MAX_UPLOAD_SIZE_MB = 15
-WIZARD_MAX_UPLOAD_SIZE_BYTES = WIZARD_MAX_UPLOAD_SIZE_MB * 1024 * 1024
 WIZARD_NOISE_OPTIONS = ["None", "White Noise", "Pink Noise", "Brown Noise"]  # Keep local or import from config/wizard_config
 WIZARD_NOISE_PREVIEW_DURATION_S = 10  # Generate only 10 seconds for preview/step
 
 logger = logging.getLogger(__name__)
+
+
+def _process_background_choice(wizard):
+    """
+    Helper function to load/generate background audio based on choice.
+    This ensures audio is ready before moving to the next step if needed,
+    or handles the 'None' case.
+    """
+    choice = st.session_state.get("wizard_background_choice")
+    audio_loaded = st.session_state.get("wizard_background_audio") is not None
+
+    if choice == "upload" and not audio_loaded:
+        # This case should ideally be handled by the file uploader logic below,
+        # but we can add a warning if they try to proceed without a successful upload.
+        logger.warning("Proceeding from Step 2 with 'Upload' selected but no audio loaded.")
+        # Optionally show a warning: st.warning("Please ensure background audio is loaded before proceeding.")
+        pass  # Allow proceeding, maybe user intends to skip background
+    elif choice == "noise" and not audio_loaded:
+        # Generate noise if it wasn't generated during interaction
+        noise_type = st.session_state.wizard_background_noise_type
+        volume = st.session_state.wizard_background_volume
+        logger.info(f"Generating background noise '{noise_type}' before proceeding.")
+        with st.spinner(f"Generating {noise_type} sample..."):
+            audio = generate_noise(noise_type, WIZARD_NOISE_PREVIEW_DURATION_S, GLOBAL_SR, volume)
+            if audio is not None:
+                st.session_state.wizard_background_audio = audio
+                st.session_state.wizard_background_sr = GLOBAL_SR
+            else:
+                st.error(f"Failed to generate {noise_type}.")
+                # Should we prevent proceeding? For now, allow, but log error.
+                logger.error(f"Failed to generate background noise {noise_type} before Step 3.")
+    elif choice == "none":
+        # Ensure audio state is cleared if 'None' is chosen
+        if audio_loaded:
+            st.session_state.wizard_background_audio = None
+            st.session_state.wizard_background_sr = None
+            logger.info("Cleared background audio state as 'None' was selected.")
 
 
 def render_step_2(wizard):
@@ -51,44 +88,63 @@ def render_step_2(wizard):
 
     # --- Logic for Upload ---
     if st.session_state.wizard_background_choice == "upload":
-        st.caption(f"Upload background audio (WAV or MP3, max {WIZARD_MAX_UPLOAD_SIZE_MB}MB).")
+        st.caption(f"Upload background audio (WAV or MP3, max {MAX_UPLOAD_SIZE_MB}MB).")
         uploaded_file = st.file_uploader(
             "Upload Background Audio",
             type=["wav", "mp3"],
             key="wizard_bg_file_uploader",
             label_visibility="collapsed",
-            on_change=wizard.clear_background_upload_state,  # Clear if file changes/removed
+            # Removed on_change here, sync_background_choice handles clearing if radio changes
         )
         if uploaded_file is not None:
-            if uploaded_file.size > WIZARD_MAX_UPLOAD_SIZE_BYTES:
-                st.error(f"❌ File '{uploaded_file.name}' ({uploaded_file.size / (1024 * 1024):.1f} MB) exceeds the {WIZARD_MAX_UPLOAD_SIZE_MB} MB limit.")
-                # Ensure state is cleared by the callback or explicitly here if needed
-                if st.session_state.get("wizard_background_audio") is not None:
+            # Check if this specific file has already been processed and loaded
+            # We need a way to track the loaded file's identity if the widget persists
+            # For simplicity, let's assume if audio exists, it's from the current uploader state
+            # A more robust way would involve storing filename in state.
+            audio_already_loaded = st.session_state.get("wizard_background_audio") is not None
+
+            if uploaded_file.size > MAX_UPLOAD_SIZE_BYTES:
+                st.error(f"❌ File '{uploaded_file.name}' ({uploaded_file.size / (1024 * 1024):.1f} MB) exceeds the {MAX_UPLOAD_SIZE_MB} MB limit.")
+                if audio_already_loaded:  # Clear if a previous valid file was loaded
                     st.session_state.wizard_background_audio = None
                     st.session_state.wizard_background_sr = None
-            else:
-                # Load only if audio is not already loaded from this file
-                if st.session_state.get("wizard_background_audio") is None:
-                    with st.spinner(f"Loading '{uploaded_file.name}'..."):
+            elif not audio_already_loaded:  # Only load if not already loaded
+                with st.spinner(f"Processing '{uploaded_file.name}'..."):
+                    try:
+                        # Save temporarily to load with librosa
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp:
+                            tmp.write(uploaded_file.getvalue())
+                            temp_file_path = tmp.name
+
+                        audio_data, sr = load_audio(temp_file_path, target_sr=GLOBAL_SR)  # Resample to global SR
+
+                        # Clean up temp file
                         try:
-                            audio, sr = load_audio(uploaded_file, target_sr=GLOBAL_SR)
-                            if audio is not None and sr is not None and audio.size > 0:
-                                duration_seconds = len(audio) / sr if sr > 0 else 0
-                                if duration_seconds > MAX_AUDIO_DURATION_S * 2:
-                                    st.warning(f"⚠️ File '{uploaded_file.name}' is quite long ({duration_seconds:.1f}s). It will be used but may increase processing time.")
-                                st.session_state.wizard_background_audio = audio
-                                st.session_state.wizard_background_sr = sr
-                                st.success(f"Loaded '{uploaded_file.name}'!")
-                                # Rerun might still be needed here after successful load to show slider correctly
-                                # Let's test without it first, rely on implicit rerun. If slider doesn't show, add back.
-                                # st.rerun()
-                            elif audio is not None:
-                                st.warning(f"File '{uploaded_file.name}' appears to be empty or invalid.")
-                            else:
-                                st.error(f"Failed to load audio from '{uploaded_file.name}'.")
-                        except Exception as e:
-                            logger.exception(f"Error loading background audio in wizard: {uploaded_file.name}")
-                            st.error(f"Error loading file: {e}")
+                            os.remove(temp_file_path)
+                        except OSError:
+                            logger.warning(f"Could not remove temp audio file: {temp_file_path}")
+
+                        if audio_data is not None and sr is not None and audio_data.size > 0:
+                            duration_seconds = len(audio_data) / sr if sr > 0 else 0
+                            if duration_seconds > MAX_AUDIO_DURATION_S * 2:  # Example check
+                                st.warning(f"⚠️ File '{uploaded_file.name}' is quite long ({duration_seconds:.1f}s). It will be used but may increase processing time.")
+                            st.session_state.wizard_background_audio = audio_data
+                            st.session_state.wizard_background_sr = sr
+                            st.success(f"Loaded '{uploaded_file.name}'!")
+                            st.rerun()  # Rerun needed to show slider after load
+                        elif audio_data is not None:
+                            st.warning(f"File '{uploaded_file.name}' appears to be empty or invalid.")
+                        else:
+                            st.error(f"Failed to load audio from '{uploaded_file.name}'.")
+                    except Exception as e:
+                        logger.exception(f"Error loading background audio in wizard: {uploaded_file.name}")
+                        st.error(f"Error loading file: {e}")
+                        # Clean up temp file in case of error during processing
+                        if "temp_file_path" in locals() and os.path.exists(temp_file_path):
+                            try:
+                                os.remove(temp_file_path)
+                            except OSError:
+                                pass
 
         # Show volume slider only if audio is loaded
         if st.session_state.get("wizard_background_audio") is not None:
@@ -96,30 +152,30 @@ def render_step_2(wizard):
 
     # --- Logic for Noise Generation ---
     elif st.session_state.wizard_background_choice == "noise":
-        noise_options_display = WIZARD_NOISE_OPTIONS[1:]
+        noise_options_display = WIZARD_NOISE_OPTIONS[1:]  # Exclude "None"
         try:
             current_noise_index = noise_options_display.index(st.session_state.wizard_background_noise_type)
         except ValueError:
             current_noise_index = 0
 
         noise_type = st.selectbox("Noise Type:", noise_options_display, key="wizard_bg_noise_type_select", index=current_noise_index)
+
         # Update state if changed - NO rerun needed here, just set state
         if noise_type != st.session_state.wizard_background_noise_type:
             st.session_state.wizard_background_noise_type = noise_type
             st.session_state.wizard_background_audio = None  # Force regeneration on next run
             st.session_state.wizard_background_sr = None
-            # <<< REMOVED st.rerun() >>>
 
         current_bg_volume = st.session_state.wizard_background_volume
         new_bg_volume = st.slider("Noise Volume", 0.0, 1.0, current_bg_volume, 0.05, key="wizard_bg_noise_vol")
-        # Update state if volume changed - NO rerun needed here
+
+        # Update state if volume changed
         if new_bg_volume != current_bg_volume:
             st.session_state.wizard_background_volume = new_bg_volume
-            # Only force regeneration if volume change should affect the sample *significantly*
-            # For simplicity, let's regenerate if volume changes. Clear audio state.
+            # Force regeneration if volume changes
             st.session_state.wizard_background_audio = None
             st.session_state.wizard_background_sr = None
-            # <<< REMOVED st.rerun() >>>
+            st.rerun()  # Rerun needed to trigger regeneration display
 
         # Generate noise if not already generated for the current type/volume
         if st.session_state.get("wizard_background_audio") is None:
@@ -130,20 +186,38 @@ def render_step_2(wizard):
                 if audio is not None:
                     st.session_state.wizard_background_audio = audio
                     st.session_state.wizard_background_sr = GLOBAL_SR
-                    # Rerun IS needed here to show the UI update after generation finishes
-                    st.rerun()
+                    st.rerun()  # Rerun IS needed here to show the UI update
                 else:
                     st.error(f"Failed to generate {noise_type}.")
 
     # --- Logic for None ---
     elif st.session_state.wizard_background_choice == "none":
         st.caption("No background sound will be added.")
-        pass
+        # Ensure audio state is cleared if 'None' is chosen
+        if st.session_state.get("wizard_background_audio") is not None:
+            st.session_state.wizard_background_audio = None
+            st.session_state.wizard_background_sr = None
+            logger.info("Cleared background audio state as 'None' was selected.")
 
     # --- Navigation Buttons ---
     st.divider()
-    col_nav1, col_nav2 = st.columns(2)
-    with col_nav1:
-        st.button("Back: Affirmations", on_click=wizard._go_to_step, args=(1,), key="wizard_step2_back")
-    with col_nav2:
-        st.button("Next: Add Frequency", on_click=wizard._go_to_step, args=(3,), type="primary", key="wizard_step2_next")
+    # Use 3 columns for Home, Back, Next
+    col_nav_1, col_nav_2, col_nav_3 = st.columns([1, 2, 2])  # Adjust ratios
+
+    with col_nav_1:
+        # Add Back to Home button
+        if st.button("🏠 Back to Home", key="wizard_step2_home", use_container_width=True, help="Exit Wizard and return to main menu."):
+            wizard._reset_wizard_state()
+            # st.rerun() is handled by reset_wizard_state indirectly
+
+    with col_nav_2:
+        if st.button("⬅️ Back: Affirmations", key="wizard_step2_back", use_container_width=True):
+            wizard._go_to_step(1)
+
+    with col_nav_3:
+        # Validation for 'Next' - always enabled from this step onwards? Or validate selection?
+        # For now, assume always enabled if they reached step 2.
+        if st.button("Next: Frequency ➡️", key="wizard_step2_next", type="primary", use_container_width=True):
+            # Process background choice before moving on
+            _process_background_choice(wizard)  # Call helper to load/generate if needed
+            wizard._go_to_step(3)

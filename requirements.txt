@@ -34,3 +34,7 @@ streamlit-advanced-audio~=0.1.1
 # that might break compatibility (e.g., ~=1.33.0 means >=1.33.0 but <1.34.0)
 
 python-docx
+
+language_tool_python
+
+tqdm

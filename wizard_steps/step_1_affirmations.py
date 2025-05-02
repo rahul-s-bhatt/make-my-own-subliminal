@@ -21,8 +21,8 @@ from config import (
 )
 from utils import read_text_file
 
-# Assuming TTSGenerator is imported elsewhere or passed via wizard instance
-# from tts_generator import TTSGenerator
+# NOTE: TTSGenerator is no longer imported directly here.
+# The wizard instance passed to render_step_1 will hold the TTS generator.
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +64,8 @@ def render_step_1(wizard):  # Pass the wizard instance which has tts_generator
         st.session_state[AFFIRM_PENDING_UPDATE_KEY] = None
         st.session_state[AFFIRM_PENDING_TRUNCATED_KEY] = False
 
-    # Use columns for layout
+    # --- Input Type Selection --- (Keep this UI logic)
     col_input_type, col_main_input = st.columns([1, 2])
-
     with col_input_type:
         st.markdown("**Choose Input Method:**")
         source_options = ["Type/Paste Text", "Upload Audio File", "Upload Text File"]
@@ -102,24 +101,23 @@ def render_step_1(wizard):  # Pass the wizard instance which has tts_generator
             # Clear conflicting data and original text backup
             if new_source != "text":
                 st.session_state[AFFIRM_TEXT_AREA_KEY] = ""
-                st.session_state[AFFIRM_ORIGINAL_TEXT_KEY] = None  # Clear backup if switching away from text
-                st.session_state[AFFIRM_PENDING_UPDATE_KEY] = None  # Clear pending update
+                st.session_state[AFFIRM_ORIGINAL_TEXT_KEY] = None
+                st.session_state[AFFIRM_PENDING_UPDATE_KEY] = None
                 st.session_state[AFFIRM_PENDING_TRUNCATED_KEY] = False
             if new_source != "upload_audio":
                 st.session_state.wizard_affirmation_audio = None
                 st.session_state.wizard_affirmation_sr = None
             st.rerun()
 
+    # --- Main Input Area --- (Keep this UI logic)
     with col_main_input:
         source = st.session_state.get("wizard_affirmation_source", "text")
 
         if source == "text":
             st.markdown("**Type or Paste Affirmations:** (one per line recommended)")
-
             affirmation_text_value = st.session_state.get(AFFIRM_TEXT_AREA_KEY, "")
 
-            # Callback to clear original text if user manually edits after expansion
-            def clear_original_on_edit():
+            def clear_original_on_edit():  # Callback
                 current_val = st.session_state.get(AFFIRM_TEXT_AREA_KEY)
                 original_val = st.session_state.get(AFFIRM_ORIGINAL_TEXT_KEY)
                 if original_val is not None and current_val != original_val:
@@ -138,48 +136,30 @@ def render_step_1(wizard):  # Pass the wizard instance which has tts_generator
             )
             st.caption(f"{len(affirmation_text_value)} / {MAX_AFFIRMATION_CHARS} characters")
 
-            # --- Expansion and Undo Buttons ---
+            # Expansion and Undo Buttons
             button_col_1, button_col_2 = st.columns(2)
-            with button_col_1:
+            with button_col_1:  # Expand
                 expand_disabled = not affirmation_text_value.strip()
                 if st.button(
-                    "✨ Expand Affirmations",
-                    key="wizard_expand_affirmations",
-                    disabled=expand_disabled,
-                    use_container_width=True,
-                    help="Generate variations of your affirmations.",
+                    "✨ Expand Affirmations", key="wizard_expand_affirmations", disabled=expand_disabled, use_container_width=True, help="Generate variations of your affirmations."
                 ):
                     with st.spinner("Expanding affirmations..."):
                         try:
                             st.session_state[AFFIRM_ORIGINAL_TEXT_KEY] = affirmation_text_value
-                            expanded_text, truncated = expand_affirmations(
-                                base_text=affirmation_text_value,
-                                max_chars=MAX_AFFIRMATION_CHARS,
-                                multiplier=3,
-                            )
+                            expanded_text, truncated = expand_affirmations(base_text=affirmation_text_value, max_chars=MAX_AFFIRMATION_CHARS, multiplier=3)
                             st.session_state[AFFIRM_PENDING_UPDATE_KEY] = expanded_text
                             st.session_state[AFFIRM_PENDING_TRUNCATED_KEY] = truncated
-                            logger.info(f"Wizard affirmation expansion complete. Staged for next run. Truncated: {truncated}")
+                            logger.info(f"Wizard affirmation expansion complete. Truncated: {truncated}")
                             st.rerun()
                         except Exception as e:
-                            logger.error(
-                                f"Error during wizard affirmation expansion: {e}",
-                                exc_info=True,
-                            )
+                            logger.error(f"Error during wizard affirmation expansion: {e}", exc_info=True)
                             st.error(f"Failed to expand affirmations: {e}")
                             st.session_state[AFFIRM_ORIGINAL_TEXT_KEY] = None
                             st.session_state[AFFIRM_PENDING_UPDATE_KEY] = None
                             st.session_state[AFFIRM_PENDING_TRUNCATED_KEY] = False
-
-            with button_col_2:
+            with button_col_2:  # Undo
                 undo_disabled = st.session_state.get(AFFIRM_ORIGINAL_TEXT_KEY) is None
-                if st.button(
-                    "↩️ Undo Expansion",
-                    key="wizard_undo_expansion",
-                    disabled=undo_disabled,
-                    use_container_width=True,
-                    help="Revert to the text before expansion.",
-                ):
+                if st.button("↩️ Undo Expansion", key="wizard_undo_expansion", disabled=undo_disabled, use_container_width=True, help="Revert to the text before expansion."):
                     original_text = st.session_state.get(AFFIRM_ORIGINAL_TEXT_KEY)
                     if original_text is not None:
                         st.session_state[AFFIRM_PENDING_UPDATE_KEY] = original_text
@@ -191,6 +171,7 @@ def render_step_1(wizard):  # Pass the wizard instance which has tts_generator
                         logger.warning("Undo clicked but no original text found in state.")
 
         elif source == "upload_audio":
+            # Audio Upload UI (Keep this logic)
             st.markdown("**Upload Affirmation Audio:**")
             uploaded_audio_file = st.file_uploader(
                 "Select an audio file (.wav, .mp3)",
@@ -200,51 +181,38 @@ def render_step_1(wizard):  # Pass the wizard instance which has tts_generator
                 help=f"Upload your pre-recorded affirmations (Max {MAX_UPLOAD_SIZE_MB}MB).",
             )
             if uploaded_audio_file:
+                # Processing logic for uploaded audio file (keep this)
                 if uploaded_audio_file.size > MAX_UPLOAD_SIZE_BYTES:
-                    st.error(f"❌ File '{uploaded_audio_file.name}' ({uploaded_audio_file.size / (1024 * 1024):.1f} MB) exceeds the {MAX_UPLOAD_SIZE_MB} MB limit.")
+                    st.error(f"❌ File '{uploaded_audio_file.name}' exceeds {MAX_UPLOAD_SIZE_MB} MB limit.")
                     st.session_state.wizard_affirmation_audio = None
                     st.session_state.wizard_affirmation_sr = None
                 else:
-                    # Process the uploaded audio file immediately
                     with st.spinner(f"Processing '{uploaded_audio_file.name}'..."):
-                        temp_file_path = None  # Define outside try block for cleanup
+                        temp_file_path = None
                         try:
-                            # Save temporarily to load
-                            with tempfile.NamedTemporaryFile(
-                                delete=False,
-                                suffix=os.path.splitext(uploaded_audio_file.name)[1],
-                            ) as tmp:
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_audio_file.name)[1]) as tmp:
                                 tmp.write(uploaded_audio_file.getvalue())
                                 temp_file_path = tmp.name
-
-                            # Use your audio loading utility
                             audio_data, sr = load_audio(temp_file_path, target_sr=GLOBAL_SR)
-
                             if audio_data is not None and sr is not None and audio_data.size > 0:
                                 st.session_state.wizard_affirmation_audio = audio_data
                                 st.session_state.wizard_affirmation_sr = sr
                                 st.success(f"✅ Loaded audio: '{uploaded_audio_file.name}' ({len(audio_data) / sr:.1f}s)")
                                 logger.info(f"Wizard Step 1: Loaded affirmation audio '{uploaded_audio_file.name}'")
-                                # Clear text state if audio is uploaded
-                                st.session_state[AFFIRM_TEXT_AREA_KEY] = ""
-                                st.session_state[AFFIRM_ORIGINAL_TEXT_KEY] = None
+                                st.session_state[AFFIRM_TEXT_AREA_KEY] = ""  # Clear text area
+                                st.session_state[AFFIRM_ORIGINAL_TEXT_KEY] = None  # Clear backup
                                 st.session_state[AFFIRM_PENDING_UPDATE_KEY] = None
                                 st.session_state[AFFIRM_PENDING_TRUNCATED_KEY] = False
                             else:
                                 st.error(f"❌ Failed to load audio from '{uploaded_audio_file.name}'.")
                                 st.session_state.wizard_affirmation_audio = None
                                 st.session_state.wizard_affirmation_sr = None
-
                         except Exception as e:
-                            logger.error(
-                                f"Error processing uploaded audio file '{uploaded_audio_file.name}': {e}",
-                                exc_info=True,
-                            )
+                            logger.error(f"Error processing audio file '{uploaded_audio_file.name}': {e}", exc_info=True)
                             st.error(f"Error processing audio file: {e}")
                             st.session_state.wizard_affirmation_audio = None
                             st.session_state.wizard_affirmation_sr = None
                         finally:
-                            # Clean up temp file
                             if temp_file_path and os.path.exists(temp_file_path):
                                 try:
                                     os.remove(temp_file_path)
@@ -252,6 +220,7 @@ def render_step_1(wizard):  # Pass the wizard instance which has tts_generator
                                     logger.warning(f"Could not remove temp audio file: {temp_file_path}")
 
         elif source == "upload_text":
+            # Text File Upload UI (Keep this logic)
             st.markdown("**Upload Affirmation Text File:**")
             uploaded_text_file = st.file_uploader(
                 "Select a text file (.txt, .docx)",
@@ -261,71 +230,54 @@ def render_step_1(wizard):  # Pass the wizard instance which has tts_generator
                 help="Upload affirmations from a text or Word document.",
             )
             if uploaded_text_file:
+                # Processing logic for text file (keep this)
                 try:
                     text_content = read_text_file(uploaded_text_file)
                     if text_content is not None:
                         if len(text_content) > MAX_AFFIRMATION_CHARS:
-                            st.error(f"❌ Text in file '{uploaded_text_file.name}' is too long ({len(text_content)} chars). Maximum is {MAX_AFFIRMATION_CHARS}.")
+                            st.error(f"❌ Text in file '{uploaded_text_file.name}' too long ({len(text_content)} chars). Max {MAX_AFFIRMATION_CHARS}.")
                             st.session_state[AFFIRM_TEXT_AREA_KEY] = ""
                         else:
-                            # Stage the loaded text as a pending update
                             st.session_state[AFFIRM_PENDING_UPDATE_KEY] = text_content
                             st.session_state[AFFIRM_PENDING_TRUNCATED_KEY] = False
                             logger.info(f"Wizard Step 1: Staged text from file '{uploaded_text_file.name}' for update.")
                             st.success(f"✅ Loaded text from: '{uploaded_text_file.name}'")
-                            # Clear other states
-                            st.session_state.wizard_affirmation_audio = None
+                            st.session_state.wizard_affirmation_audio = None  # Clear audio state
                             st.session_state.wizard_affirmation_sr = None
                             st.session_state[AFFIRM_ORIGINAL_TEXT_KEY] = None
-                            # Switch back to text view and rerun to apply pending update
-                            st.session_state.wizard_affirmation_source = "text"
+                            st.session_state.wizard_affirmation_source = "text"  # Switch back to text view
                             st.rerun()
                     else:
-                        # read_text_file likely returned None due to an error reading the file type
                         st.error(f"Could not read text content from '{uploaded_text_file.name}'. Check file format.")
                         st.session_state[AFFIRM_TEXT_AREA_KEY] = ""
                 except Exception as e:
-                    logger.error(
-                        f"Error reading text file '{uploaded_text_file.name}': {e}",
-                        exc_info=True,
-                    )
+                    logger.error(f"Error reading text file '{uploaded_text_file.name}': {e}", exc_info=True)
                     st.error(f"Failed to read text file: {e}")
                     st.session_state[AFFIRM_TEXT_AREA_KEY] = ""
 
     st.divider()
 
-    # --- Navigation ---
+    # --- Navigation --- (Keep this UI logic)
     col_nav_1, col_nav_2, col_nav_3 = st.columns([1, 2, 2])
-
-    with col_nav_1:
-        if st.button(
-            "🏠 Back to Home",
-            key="wizard_step1_home",
-            use_container_width=True,
-            help="Exit Wizard and return to main menu.",
-        ):
-            wizard._reset_wizard_state()  # Resets state and reruns
-
-    with col_nav_2:
+    with col_nav_1:  # Home
+        if st.button("🏠 Back to Home", key="wizard_step1_home", use_container_width=True, help="Exit Wizard and return to main menu."):
+            wizard._reset_wizard_state()
+    with col_nav_2:  # Back
         st.button("⬅️ Back", key="wizard_step1_back", disabled=True, use_container_width=True)
-
-    with col_nav_3:
-        # Validate input before allowing 'Next'
+    with col_nav_3:  # Next
+        # Validation logic (keep this)
         next_disabled = True
         current_source = st.session_state.get("wizard_affirmation_source", "text")
         affirm_text_present = st.session_state.get(AFFIRM_TEXT_AREA_KEY, "").strip()
         affirm_audio_present = st.session_state.get("wizard_affirmation_audio") is not None
-
-        if current_source == "text" and affirm_text_present:
+        if (
+            (current_source == "text" and affirm_text_present)
+            or (current_source == "upload_audio" and affirm_audio_present)
+            or (current_source == "upload_text" and affirm_text_present)
+        ):  # Simplified check
             next_disabled = False
-        elif current_source == "upload_audio" and affirm_audio_present:
-            next_disabled = False
-        elif current_source == "upload_text":  # This state shouldn't persist
-            if affirm_text_present:  # Check if text was loaded and staged
-                next_disabled = False
-            else:
-                # This case implies a text file was uploaded but failed to load/stage
-                st.warning("Upload a valid text file or select another source.")
+        elif current_source == "upload_text" and not affirm_text_present:
+            st.warning("Upload a valid text file or select another source.")
 
         if st.button(
             "Next: Background Sound ➡️",
@@ -334,53 +286,56 @@ def render_step_1(wizard):  # Pass the wizard instance which has tts_generator
             use_container_width=True,
             disabled=next_disabled,
         ):
-            # --- MODIFIED TTS CALL ---
+            # --- *** MODIFIED TTS CALL LOGIC *** ---
             # Generate TTS only if source is text and audio doesn't exist yet
             if st.session_state.wizard_affirmation_source == "text" and st.session_state.wizard_affirmation_audio is None:
                 text_to_gen = st.session_state.get(AFFIRM_TEXT_AREA_KEY, "")
                 if text_to_gen.strip():
-                    logger.info("Wizard Step 1: Generating TTS audio using generate_quick_wizard.")
-                    # Use st.spinner here in the UI code
-                    with st.spinner("Generating affirmation audio... Please wait, this may take a while for long text."):
+                    logger.info("Wizard Step 1: Generating TTS audio using wizard's TTS generator.")
+                    with st.spinner("Generating affirmation audio... Please wait."):
                         try:
-                            # Call the wizard-specific generator method
-                            # This method now raises exceptions on failure
-                            audio_data, sr = wizard.tts_generator.generate_quick_wizard(text_to_gen)
+                            # --- Use the standard 'generate' method from the base class ---
+                            # wizard.tts_generator should be an instance of PiperTTSGenerator (or other BaseTTSGenerator)
+                            audio_data, sr = wizard.tts_generator.generate(text_to_gen)
+                            # --- End standard method call ---
 
-                            # If generate_quick_wizard completes without error:
-                            st.session_state.wizard_affirmation_audio = audio_data
-                            st.session_state.wizard_affirmation_sr = sr
-                            logger.info("Wizard TTS generation successful.")
+                            # Check if generation succeeded
+                            if audio_data is not None and sr is not None:
+                                st.session_state.wizard_affirmation_audio = audio_data
+                                st.session_state.wizard_affirmation_sr = sr  # Should match GLOBAL_SR
+                                logger.info(f"Wizard TTS generation successful. SR: {sr}")
 
-                            # Clear original text backup after successful generation/navigation
-                            st.session_state[AFFIRM_ORIGINAL_TEXT_KEY] = None
-                            st.session_state[AFFIRM_PENDING_UPDATE_KEY] = None
-                            st.session_state[AFFIRM_PENDING_TRUNCATED_KEY] = False
+                                # Clear original text backup after successful generation/navigation
+                                st.session_state[AFFIRM_ORIGINAL_TEXT_KEY] = None
+                                st.session_state[AFFIRM_PENDING_UPDATE_KEY] = None
+                                st.session_state[AFFIRM_PENDING_TRUNCATED_KEY] = False
 
-                            # Proceed to the next step
-                            wizard._go_to_step(2)  # Reruns
+                                # Proceed to the next step
+                                wizard._go_to_step(2)  # Reruns
+                            else:
+                                # Handle case where generate() might return None, None without exception
+                                logger.error("TTS generation returned None or empty data without raising an exception.")
+                                st.error("Audio generation failed. Please check logs or try again.")
 
                         except Exception as e:
-                            # Catch exceptions raised by generate_quick_wizard
+                            # Catch exceptions raised by the generate method
                             logger.error(
-                                f"Error generating TTS in wizard step 1 (generate_quick_wizard): {e}",
+                                f"Error generating TTS in wizard step 1: {e}",
                                 exc_info=True,  # Log traceback
                             )
-                            # Display the error in the Streamlit UI
                             st.error(f"Audio generation failed: {e}")
                             # Do NOT proceed to the next step if TTS failed
                 else:
-                    # This case should be prevented by the 'next_disabled' logic, but double-check
+                    # This case should be prevented by the 'next_disabled' logic
                     st.error("Cannot proceed without affirmation text.")
 
             elif st.session_state.wizard_affirmation_audio is not None:
                 # If audio already exists (e.g., from upload), proceed directly
-                # Clear original text backup when navigating with existing audio
                 st.session_state[AFFIRM_ORIGINAL_TEXT_KEY] = None
                 st.session_state[AFFIRM_PENDING_UPDATE_KEY] = None
                 st.session_state[AFFIRM_PENDING_TRUNCATED_KEY] = False
                 wizard._go_to_step(2)  # Reruns
             else:
-                # This case implies 'next' was clicked when disabled, should not happen
+                # This case implies 'next' was clicked when disabled
                 st.error("Please provide affirmations (text or audio) before proceeding.")
-            # --- END MODIFIED TTS CALL ---
+            # --- *** END MODIFIED TTS CALL LOGIC *** ---

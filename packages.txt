@@ -1,2 +1,2 @@
-espeak
+libsndfile1
 ffmpeg

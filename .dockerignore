@@ -1,0 +1,62 @@
+# .dockerignore
+
+# Git / Version Control
+.git
+.gitignore
+.gitattributes
+
+# Python Virtual Environment
+.venv
+venv/
+*.venv
+
+# IDE / Editor specific folders
+.vscode/
+.idea/
+.devcontainer/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ruff cache
+.ruff_cache/
+
+# Streamlit cache/config (if not needed in image)
+.streamlit/
+
+# Log files
+*.log
+
+# OS specific files (examples)
+.DS_Store
+Thumbs.db
+
+# Test files (if you have a tests directory)
+tests/
+*.test.py
+pytest.ini
+
+# Build artifacts (if any)
+dist/
+build/
+*.egg-info/
+
+# Local scripts / config (examples)
+activate_venv.ps1
+run.ps1
+current_folder_structure.txt # Example file from your list
+
+# Dockerfile itself (usually not needed inside)
+Dockerfile
+docker-compose.yml
+
+# Requirements/Packages files (already copied separately)
+# requirements.txt # Keep if needed for reference, ignore if not
+# packages.txt # Keep if needed for reference, ignore if not
+
+# README / License (Optional - keep if you want them in the image)
+# README.md
+# LICENSE

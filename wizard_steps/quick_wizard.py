@@ -12,7 +12,7 @@ import numpy as np
 import streamlit as st
 
 # Import necessary components from other modules
-from audio_utils.audio_io import save_audio_to_bytesio
+from audio_utils.audio_io import save_audio_to_bytesio  # Keep using this
 
 # Import mix_wizard_tracks from audio_utils.audio_mixers
 # Assuming mix_wizard_tracks expects audio data as numpy arrays and SR as int
@@ -64,8 +64,8 @@ class QuickWizard:
         logger.debug("QuickWizard initialized and state ensured.")
 
     # --- State Synchronization Callbacks ---
+    # (Keep existing callbacks: sync_affirmation_text, clear_affirmation_upload_state, etc.)
     def sync_affirmation_text(self):
-        # This might be less needed now with direct state binding, but keep for potential explicit sync
         st.session_state.wizard_affirmation_text = st.session_state.get("wizard_affirm_text_area", "")
         if st.session_state.get("wizard_affirmation_source") == "text":
             st.session_state.wizard_affirmation_audio = None
@@ -73,8 +73,6 @@ class QuickWizard:
         logger.debug("Synced affirmation text state.")
 
     def clear_affirmation_upload_state(self):
-        # Callback for file uploader on_change if needed
-        # Currently handled by radio button logic mostly
         pass
 
     def sync_background_choice(self, choice_options: List[str]):
@@ -87,7 +85,6 @@ class QuickWizard:
         elif selected_label == "Generate Noise":
             new_choice = "noise"
 
-        # Only clear audio if the *type* of choice changed (e.g., upload -> noise)
         if new_choice != st.session_state.get("wizard_background_choice"):
             st.session_state.wizard_background_audio = None
             st.session_state.wizard_background_sr = None
@@ -97,7 +94,6 @@ class QuickWizard:
         st.session_state.wizard_background_choice_label = selected_label
 
     def clear_background_upload_state(self):
-        # Callback for file uploader on_change if needed
         pass
 
     # --- Navigation and Reset ---
@@ -129,15 +125,15 @@ class QuickWizard:
         if current_length == target_length:
             return audio_data
         elif current_length < target_length:
-            # Calculate how many times to repeat the audio
-            # Use ceiling division to ensure we cover the target length
             num_repeats = math.ceil(target_length / current_length)
-            # Tile the audio data
-            looped_audio = np.tile(audio_data, (num_repeats, 1) if audio_data.ndim > 1 else num_repeats)
-            # Truncate to the exact target length
+            # Handle potential mono input before tiling (should be stereo by now, but check)
+            if audio_data.ndim == 1:
+                logger.warning("Looping mono audio. Will tile as 1D.")
+                looped_audio = np.tile(audio_data, num_repeats)
+            else:
+                looped_audio = np.tile(audio_data, (num_repeats, 1))
             return looped_audio[:target_length]
         else:  # current_length > target_length
-            # Truncate the audio data
             return audio_data[:target_length]
 
     # --- Core Processing Logic ---
@@ -182,12 +178,9 @@ class QuickWizard:
         try:
             # Ensure all tracks are at the target sample rate (should be handled by load/gen, but double-check)
             if affirmation_sr != GLOBAL_SR:
-                # NOTE: Resampling should ideally happen earlier (on load/generation)
-                # If not, add resampling logic here using librosa or similar
-                logger.warning(f"Affirmation SR ({affirmation_sr}) differs from GLOBAL_SR ({GLOBAL_SR}). Resampling required but not implemented here.")
-                # raise NotImplementedError("Resampling logic needed if SR mismatch occurs here.")
-                # For now, proceed assuming SR matches GLOBAL_SR as per earlier steps
-                pass  # Assume GLOBAL_SR
+                logger.warning(f"Affirmation SR ({affirmation_sr}) differs from GLOBAL_SR ({GLOBAL_SR}). This might cause issues.")
+                # Ideally, add resampling here if this occurs
+                pass  # Assume GLOBAL_SR for now
 
             target_length_samples = affirmation_audio_data.shape[0]
             logger.info(f"Target mix length based on affirmations: {target_length_samples / GLOBAL_SR:.2f} seconds")
@@ -225,88 +218,121 @@ class QuickWizard:
         # --- Mix Tracks ---
         logger.info("Wizard mixing tracks...")
         spinner_msg = f"Generating final mix ({export_format.upper()})..."
-        with st.spinner(spinner_msg):
-            try:
-                # Pass effective speed/volume and potentially looped tracks
-                full_mix = mix_wizard_tracks(
-                    affirmation_audio=affirmation_tuple,  # Already checked not None
-                    background_audio=background_tuple,  # May be None
-                    frequency_audio=frequency_tuple,  # May be None
-                    affirmation_speed=eff_affirm_speed,
-                    affirmation_volume=eff_affirm_volume,
-                    background_volume=background_volume,
-                    frequency_volume=frequency_volume,
-                    target_sr=GLOBAL_SR,
-                    # Assuming mix_wizard_tracks handles potential None inputs gracefully
-                )
+        # NOTE: The spinner is now handled in step_4_export.py around this call
+        # with st.spinner(spinner_msg): # Remove spinner from here
+        try:
+            # Pass effective speed/volume and potentially looped tracks
+            full_mix = mix_wizard_tracks(
+                affirmation_audio=affirmation_tuple,  # Already checked not None
+                background_audio=background_tuple,  # May be None
+                frequency_audio=frequency_tuple,  # May be None
+                affirmation_speed=eff_affirm_speed,
+                affirmation_volume=eff_affirm_volume,
+                background_volume=background_volume,
+                frequency_volume=frequency_volume,
+                target_sr=GLOBAL_SR,
+            )
 
-                if full_mix is None or full_mix.size == 0:
-                    raise ValueError("Mixing process resulted in empty or None audio.")
+            if full_mix is None or full_mix.size == 0:
+                raise ValueError("Mixing process resulted in empty or None audio.")
 
-                mix_duration_s = len(full_mix) / GLOBAL_SR if GLOBAL_SR > 0 else 0
-                logger.info(f"Mixing successful. Final mix length: {mix_duration_s:.2f} seconds.")
+            mix_duration_s = len(full_mix) / GLOBAL_SR if GLOBAL_SR > 0 else 0
+            logger.info(f"Mixing successful. Final mix length: {mix_duration_s:.2f} seconds.")
 
-                # --- Export to selected format ---
-                if export_format == "wav":
-                    export_buffer = save_audio_to_bytesio(full_mix, GLOBAL_SR)  # Specify format
-                    if export_buffer and export_buffer.getbuffer().nbytes > 0:
-                        st.session_state.wizard_export_buffer = export_buffer
-                        logger.info("Wizard WAV mix generated.")
+            # --- Export to selected format ---
+            export_buffer = None  # Initialize buffer variable
+            if export_format == "wav":
+                logger.info("Saving final mix to WAV buffer...")
+                export_buffer = save_audio_to_bytesio(full_mix, GLOBAL_SR)  # Using the robust version
+
+                # --- ADDED BUFFER CHECK ---
+                if export_buffer and export_buffer.getbuffer().nbytes > 0:
+                    buffer_size = export_buffer.getbuffer().nbytes
+                    # Calculate expected size (approx): samples * channels * bytes_per_sample (2 for int16)
+                    expected_min_size = full_mix.shape[0] * 2 * 2 * 0.9  # Samples * stereo * 2 bytes/sample * 90% tolerance
+                    logger.info(f"Generated export buffer size: {buffer_size} bytes.")
+                    if buffer_size < expected_min_size:
+                        logger.error(f"Export buffer size ({buffer_size}) seems unexpectedly small compared to expected minimum ({expected_min_size})!")
+                        # Optionally raise an error or set the buffer to None
+                        # raise ValueError("Generated WAV buffer is unexpectedly small.")
+                        st.session_state.wizard_export_error = "Generated audio buffer was unexpectedly small. Export failed."
+                        export_buffer = None  # Prevent download of potentially corrupt buffer
                     else:
-                        raise ValueError("Failed to save WAV mix to buffer (empty buffer).")
-                elif export_format == "mp3" and PYDUB_AVAILABLE:
-                    try:
-                        logger.info("Wizard converting full mix to MP3...")
-                        # Ensure data is in range [-1.0, 1.0] before converting to int16
-                        full_mix_clipped = np.clip(full_mix, -1.0, 1.0)
-                        # Convert to int16
-                        audio_int16 = (full_mix_clipped * 32767).astype(np.int16)
-
-                        # Determine channels based on numpy array dimensions
-                        if audio_int16.ndim == 1:
-                            channels = 1
-                        elif audio_int16.ndim == 2 and audio_int16.shape[1] == 2:
-                            channels = 2
-                        elif audio_int16.ndim == 2 and audio_int16.shape[1] == 1:
-                            channels = 1
-                            audio_int16 = audio_int16.flatten()  # Ensure it's 1D for mono
-                        else:
-                            raise ValueError(f"Unexpected audio shape for pydub: {audio_int16.shape}")
-
-                        segment = AudioSegment(
-                            data=audio_int16.tobytes(),
-                            sample_width=audio_int16.dtype.itemsize,
-                            frame_rate=GLOBAL_SR,
-                            channels=channels,
-                        )
-                        # Ensure stereo for broader compatibility if originally mono
-                        if channels == 1:
-                            segment = segment.set_channels(2)
-                            logger.info("Converted mono mix to stereo for MP3 export.")
-
-                        mp3_buffer = BytesIO()
-                        # Use standard bitrate like 192k for decent quality/size balance
-                        segment.export(mp3_buffer, format="mp3", bitrate="192k")
-                        mp3_buffer.seek(0)
-
-                        if mp3_buffer.getbuffer().nbytes > 0:
-                            st.session_state.wizard_export_buffer = mp3_buffer
-                            logger.info("Wizard MP3 mix generated.")
-                        else:
-                            raise ValueError("MP3 export resulted in an empty buffer.")
-                    except Exception as e_mp3:
-                        logger.exception("Wizard failed to export mix as MP3.")
-                        st.session_state.wizard_export_error = f"MP3 Export Failed: {e_mp3}. Ensure ffmpeg is installed and accessible."
-                elif export_format == "mp3" and not PYDUB_AVAILABLE:
-                    st.session_state.wizard_export_error = "MP3 export requires 'pydub' and 'ffmpeg'."
-                    logger.error(st.session_state.wizard_export_error)
+                        st.session_state.wizard_export_buffer = export_buffer
+                        logger.info("Wizard WAV mix buffer generated and stored in session state.")
                 else:
-                    st.session_state.wizard_export_error = f"Unsupported export format '{export_format}'."
-                    logger.error(st.session_state.wizard_export_error)
+                    # save_audio_to_bytesio failed or returned empty
+                    logger.error("save_audio_to_bytesio failed to return a valid buffer.")
+                    st.session_state.wizard_export_error = "Failed to save final audio to buffer."
+                    export_buffer = None  # Ensure it's None
+            # --- END ADDED BUFFER CHECK ---
 
-            except Exception as e:
-                logger.exception("Error during wizard mix/save.")
-                st.session_state.wizard_export_error = f"Processing Failed: {e}"
+            elif export_format == "mp3" and PYDUB_AVAILABLE:
+                try:
+                    logger.info("Wizard converting full mix to MP3...")
+                    full_mix_clipped = np.clip(full_mix, -1.0, 1.0)
+                    audio_int16 = (full_mix_clipped * 32767).astype(np.int16)
+                    channels = 2  # Assume stereo after mixing/processing
+                    if audio_int16.ndim == 1:
+                        channels = 1
+                    elif audio_int16.ndim == 2 and audio_int16.shape[1] == 1:
+                        channels = 1
+                        audio_int16 = audio_int16.flatten()
+
+                    segment = AudioSegment(
+                        data=audio_int16.tobytes(),
+                        sample_width=audio_int16.dtype.itemsize,
+                        frame_rate=GLOBAL_SR,
+                        channels=channels,
+                    )
+                    if channels == 1:
+                        segment = segment.set_channels(2)
+                        logger.info("Converted mono mix to stereo for MP3 export.")
+
+                    mp3_buffer = BytesIO()
+                    segment.export(mp3_buffer, format="mp3", bitrate="192k")
+                    mp3_buffer.seek(0)
+
+                    # --- ADDED BUFFER CHECK ---
+                    if mp3_buffer.getbuffer().nbytes > 0:
+                        buffer_size = mp3_buffer.getbuffer().nbytes
+                        logger.info(f"Generated MP3 export buffer size: {buffer_size} bytes.")
+                        # MP3 size is harder to predict, just check > 0
+                        if buffer_size < 1000:  # Check it's not trivially small
+                            logger.error(f"MP3 Export buffer size ({buffer_size}) seems unexpectedly small!")
+                            st.session_state.wizard_export_error = "Generated MP3 audio buffer was unexpectedly small. Export failed."
+                            export_buffer = None
+                        else:
+                            st.session_state.wizard_export_buffer = mp3_buffer
+                            logger.info("Wizard MP3 mix buffer generated and stored in session state.")
+                            export_buffer = mp3_buffer  # Assign to check later if needed
+                    else:
+                        logger.error("MP3 export resulted in an empty buffer.")
+                        st.session_state.wizard_export_error = "MP3 export failed (empty buffer)."
+                        export_buffer = None
+                    # --- END ADDED BUFFER CHECK ---
+
+                except Exception as e_mp3:
+                    logger.exception("Wizard failed to export mix as MP3.")
+                    st.session_state.wizard_export_error = f"MP3 Export Failed: {e_mp3}. Ensure ffmpeg is installed and accessible."
+                    export_buffer = None
+            elif export_format == "mp3" and not PYDUB_AVAILABLE:
+                st.session_state.wizard_export_error = "MP3 export requires 'pydub' and 'ffmpeg'."
+                logger.error(st.session_state.wizard_export_error)
+                export_buffer = None
+            else:
+                st.session_state.wizard_export_error = f"Unsupported export format '{export_format}'."
+                logger.error(st.session_state.wizard_export_error)
+                export_buffer = None
+
+            # Final check if buffer creation failed for any reason
+            if export_buffer is None or export_buffer.getbuffer().nbytes == 0:
+                logger.error("Export process finished but resulted in no valid export buffer.")
+                # Error message should already be set in session state by specific format handling
+
+        except Exception as e:
+            logger.exception("Error during wizard mix/save.")
+            st.session_state.wizard_export_error = f"Processing Failed: {e}"
 
     # --- Main Rendering Method ---
     def render_wizard(self):
@@ -333,8 +359,11 @@ class QuickWizard:
         elif step == 3:
             step_3_frequency.render_step_3(self)
         elif step == 4:
+            # Wrap the call to render_step_4 in a spinner if generation is happening
+            # (Need to manage the button state carefully)
+            # This might be better handled within render_step_4 itself
             step_4_export.render_step_4(self)
         else:
             st.error("Invalid wizard step detected. Resetting.")
             logger.error(f"Invalid wizard step: {step}. Resetting.")
-            self._reset_wizard_state()
+            self._reset_wizard_state()  # Reruns

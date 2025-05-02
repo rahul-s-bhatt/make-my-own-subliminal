@@ -13,8 +13,12 @@ PROJECT_FILE_VERSION: str = "1.0"  # For future compatibility checks of saved pr
 
 # --- External Services / Integrations ---
 GA_MEASUREMENT_ID: str = "G-B5LWHH5H7N"  # Replace with your actual ID if needed
-GOOGLE_FORM_URL: str = "https://forms.gle/eXGtvAzEoEZCHpK69"  # Replace with your actual URL if needed
-PATERON_URL: str = "https://patreon.com/MindMorphing?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_creator&utm_content=copyLink"
+GOOGLE_FORM_URL: str = (
+    "https://forms.gle/eXGtvAzEoEZCHpK69"  # Replace with your actual URL if needed
+)
+PATERON_URL: str = (
+    "https://patreon.com/MindMorphing?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_creator&utm_content=copyLink"
+)
 
 
 # --- Audio Processing ---
@@ -25,9 +29,15 @@ ULTRASONIC_FILTER_ORDER: int = 8  # Steep filter order
 # --- UI / Preview ---
 PREVIEW_DURATION_S: int = 30  # Default duration for track previews in editor (seconds)
 MIX_PREVIEW_DURATION_S: int = 10  # Duration for the master mix preview (seconds)
-MIX_PREVIEW_PROCESSING_BUFFER_S: int = 5  # Extra seconds to process for preview to handle speed changes
-TRACK_SNIPPET_DURATION_S: int = 30  # Duration (in seconds) of audio loaded into memory for editing/preview (Uploads/TTS)
-GENERATOR_SNIPPET_DURATION_S: int = 10  # Duration (in seconds) for generated noise/frequency snippets
+MIX_PREVIEW_PROCESSING_BUFFER_S: int = (
+    5  # Extra seconds to process for preview to handle speed changes
+)
+TRACK_SNIPPET_DURATION_S: int = (
+    30  # Duration (in seconds) of audio loaded into memory for editing/preview (Uploads/TTS)
+)
+GENERATOR_SNIPPET_DURATION_S: int = (
+    10  # Duration (in seconds) for generated noise/frequency snippets
+)
 
 # --- TTS ---
 TTS_CHUNK_SIZE: int = 1500  # Max characters per chunk for TTS generation
@@ -37,7 +47,9 @@ MAX_AUDIO_DURATION_S: int = 300  # 5 minutes max for uploaded/generated audio (U
 MAX_AFFIRMATION_CHARS: int = 5000  # Max characters for TTS input
 MAX_TRACK_LIMIT: int = 5  # Maximum number of tracks allowed in the Advanced Editor
 MAX_UPLOAD_SIZE_MB: int = 10  # Maximum size for uploaded files in Megabytes
-MAX_UPLOAD_SIZE_BYTES: int = MAX_UPLOAD_SIZE_MB * 1024 * 1024  # Calculated size in bytes
+MAX_UPLOAD_SIZE_BYTES: int = (
+    MAX_UPLOAD_SIZE_MB * 1024 * 1024
+)  # Calculated size in bytes
 
 # --- Presets ---
 # <<< ADDED: Constants for the Quick Subliminal Preset >>>
@@ -103,7 +115,9 @@ def get_default_track_params() -> Dict[str, Any]:
 
 # --- Logging ---
 LOG_FILE: str = "editor_oop.log"
-LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - [%(funcName)s] - %(message)s"
+LOG_FORMAT: str = (
+    "%(asctime)s - %(name)s - %(levelname)s - [%(funcName)s] - %(message)s"
+)
 LOG_MAX_BYTES: int = 10 * 1024 * 1024  # 10 MB
 LOG_BACKUP_COUNT: int = 3
 

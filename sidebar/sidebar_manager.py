@@ -85,7 +85,13 @@ class SidebarManager:
             if google_form_url == "YOUR_GOOGLE_FORM_URL_HERE":
                 st.warning("Feedback form URL not configured.")
             else:
-                st.link_button("📝 Provide Feedback", url=google_form_url, help="Opens feedback form in a new tab.", use_container_width=True, type="secondary")
+                st.link_button(
+                    "📝 Provide Feedback",
+                    url=google_form_url,
+                    help="Opens feedback form in a new tab.",
+                    use_container_width=True,
+                    type="secondary",
+                )
                 logger.debug(f"Rendered feedback button linking to: {google_form_url}")
             st.markdown("---")
             # --- END FEEDBACK BUTTON ---

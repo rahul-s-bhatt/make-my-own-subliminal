@@ -90,8 +90,13 @@ class SidebarUploader:
         # (remains the same)
         current_count = len(self.app_state.get_all_tracks())
         if current_count + adding_count > MAX_TRACK_LIMIT:
-            logger.warning(f"Track limit ({MAX_TRACK_LIMIT}) reached. Cannot add {adding_count} more track(s).")
-            st.error(f"Cannot add more tracks. Maximum limit of {MAX_TRACK_LIMIT} reached.", icon="🚫")
+            logger.warning(
+                f"Track limit ({MAX_TRACK_LIMIT}) reached. Cannot add {adding_count} more track(s)."
+            )
+            st.error(
+                f"Cannot add more tracks. Maximum limit of {MAX_TRACK_LIMIT} reached.",
+                icon="🚫",
+            )
             return False
         return True
 
@@ -101,7 +106,9 @@ class SidebarUploader:
         Callback function to process uploaded audio files.
         """
         # (remains the same)
-        logger.debug(f"Callback triggered: _handle_audio_upload (key: {self.audio_uploader_key})")
+        logger.debug(
+            f"Callback triggered: _handle_audio_upload (key: {self.audio_uploader_key})"
+        )
         uploaded_files = st.session_state.get(self.audio_uploader_key)
         if not uploaded_files:
             return
@@ -117,21 +124,29 @@ class SidebarUploader:
         current_track_filenames = {
             tdata["source_info"]["original_filename"]
             for _, tdata in current_tracks.items()
-            if isinstance(tdata.get("source_info"), dict) and tdata["source_info"].get("type") == "upload" and "original_filename" in tdata["source_info"]
+            if isinstance(tdata.get("source_info"), dict)
+            and tdata["source_info"].get("type") == "upload"
+            and "original_filename" in tdata["source_info"]
         }
 
         for file in files_to_process:
             if not self._check_track_limit(adding_count=1):
                 break
-            logger.info(f"Processing uploaded file: {file.name} (Size: {file.size} bytes)")
+            logger.info(
+                f"Processing uploaded file: {file.name} (Size: {file.size} bytes)"
+            )
             if file.size > MAX_UPLOAD_SIZE_BYTES:
                 logger.warning(f"Upload '{file.name}' rejected: Size exceeds limit.")
-                st.error(f"❌ File '{file.name}' ({file.size / (1024 * 1024):.1f} MB) exceeds {MAX_UPLOAD_SIZE_MB} MB limit.")
+                st.error(
+                    f"❌ File '{file.name}' ({file.size / (1024 * 1024):.1f} MB) exceeds {MAX_UPLOAD_SIZE_MB} MB limit."
+                )
                 files_skipped_or_failed += 1
                 continue
             if file.name in current_track_filenames:
                 logger.info(f"Skipping upload: Track for '{file.name}' already exists.")
-                st.warning(f"⚠️ Track with filename '{file.name}' already exists. Skipping.")
+                st.warning(
+                    f"⚠️ Track with filename '{file.name}' already exists. Skipping."
+                )
                 files_skipped_or_failed += 1
                 continue
 
@@ -140,39 +155,78 @@ class SidebarUploader:
             snippet_sr = None
             try:
                 # Save temp file and load snippet (remains the same)
-                with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.name)[1]) as tmp:
+                with tempfile.NamedTemporaryFile(
+                    delete=False, suffix=os.path.splitext(file.name)[1]
+                ) as tmp:
                     tmp.write(file.getvalue())
                     temp_file_path = tmp.name
-                logger.info(f"Saved uploaded file '{file.name}' temporarily to: {temp_file_path}")
-                audio_snippet, snippet_sr = load_audio(temp_file_path, target_sr=GLOBAL_SR, duration=TRACK_SNIPPET_DURATION_S)
+                logger.info(
+                    f"Saved uploaded file '{file.name}' temporarily to: {temp_file_path}"
+                )
+                audio_snippet, snippet_sr = load_audio(
+                    temp_file_path,
+                    target_sr=GLOBAL_SR,
+                    duration=TRACK_SNIPPET_DURATION_S,
+                )
             except Exception as e:
                 # Error handling (remains the same)
-                logger.error(f"Error saving temp file or loading snippet for {file.name}: {e}", exc_info=True)
+                logger.error(
+                    f"Error saving temp file or loading snippet for {file.name}: {e}",
+                    exc_info=True,
+                )
                 st.error(f"Failed to process {file.name}: {e}")
                 if temp_file_path and os.path.exists(temp_file_path):
                     try:
                         os.remove(temp_file_path)
                     except OSError:
-                        logger.warning(f"Failed cleanup temp file {temp_file_path} after error.")
+                        logger.warning(
+                            f"Failed cleanup temp file {temp_file_path} after error."
+                        )
                 files_skipped_or_failed += 1
                 continue
 
             # Process loaded snippet (remains the same)
-            if audio_snippet is not None and snippet_sr is not None and audio_snippet.size > 0:
+            if (
+                audio_snippet is not None
+                and snippet_sr is not None
+                and audio_snippet.size > 0
+            ):
                 files_processed_successfully = True
                 # Determine track type (remains the same)
-                if any(k in file.name.lower() for k in ["voice", "record", "affirmation", "tts"]):
+                if any(
+                    k in file.name.lower()
+                    for k in ["voice", "record", "affirmation", "tts"]
+                ):
                     track_type = TRACK_TYPE_VOICE
-                elif any(k in file.name.lower() for k in ["music", "background", "mask", "ambient"]):
+                elif any(
+                    k in file.name.lower()
+                    for k in ["music", "background", "mask", "ambient"]
+                ):
                     track_type = TRACK_TYPE_BACKGROUND
                 else:
                     track_type = TRACK_TYPE_OTHER
-                source_info: SourceInfoUpload = {"type": "upload", "temp_file_path": temp_file_path, "original_filename": file.name}
-                initial_params = {"name": os.path.splitext(file.name)[0], "track_type": track_type}
+                source_info: SourceInfoUpload = {
+                    "type": "upload",
+                    "temp_file_path": temp_file_path,
+                    "original_filename": file.name,
+                }
+                initial_params = {
+                    "name": os.path.splitext(file.name)[0],
+                    "track_type": track_type,
+                }
                 # Add track (remains the same)
-                new_track_id = self.app_state.add_track(audio_snippet=audio_snippet, source_info=source_info, sr=snippet_sr, initial_params=initial_params)
-                duration_seconds = len(audio_snippet) / snippet_sr if snippet_sr > 0 else 0
-                st.success(f"Loaded '{file.name}' as '{track_type}' (Snippet: {duration_seconds:.1f}s)")
+                new_track_id = self.app_state.add_track(
+                    audio_snippet=audio_snippet,
+                    source_info=source_info,
+                    sr=snippet_sr,
+                    initial_params=initial_params,
+                )
+                duration_seconds = (
+                    len(audio_snippet) / snippet_sr if snippet_sr > 0 else 0
+                )
+                st.success(
+                    f"Loaded '{file.name}' as '{track_type}' (Snippet: {duration_seconds:.1f}s)"
+                )
                 current_track_filenames.add(file.name)
                 # Clear text states (remains the same)
                 st.session_state[self.affirmation_text_area_key] = ""
@@ -189,24 +243,34 @@ class SidebarUploader:
                     try:
                         os.remove(temp_file_path)
                     except OSError:
-                        logger.warning(f"Failed cleanup temp file {temp_file_path} after load failure.")
+                        logger.warning(
+                            f"Failed cleanup temp file {temp_file_path} after load failure."
+                        )
                 files_skipped_or_failed += 1
             else:
                 # Handle empty snippet (remains the same)
                 logger.warning(f"Skipped empty/invalid audio snippet: {file.name}")
-                st.warning(f"Audio file '{file.name}' appears empty or could not be processed.")
+                st.warning(
+                    f"Audio file '{file.name}' appears empty or could not be processed."
+                )
                 if temp_file_path and os.path.exists(temp_file_path):
                     try:
                         os.remove(temp_file_path)
                     except OSError:
-                        logger.warning(f"Failed cleanup temp file {temp_file_path} for empty audio.")
+                        logger.warning(
+                            f"Failed cleanup temp file {temp_file_path} for empty audio."
+                        )
                 files_skipped_or_failed += 1
 
         # Logging and rerun logic (remains the same)
         if files_processed_successfully:
-            logger.debug(f"Audio upload callback finished. Processed: {len(files_to_process) - files_skipped_or_failed}, Skipped/Failed: {files_skipped_or_failed}")
+            logger.debug(
+                f"Audio upload callback finished. Processed: {len(files_to_process) - files_skipped_or_failed}, Skipped/Failed: {files_skipped_or_failed}"
+            )
         elif uploaded_files:
-            logger.debug(f"Audio upload callback finished. Skipped/Failed all {len(files_to_process)} files.")
+            logger.debug(
+                f"Audio upload callback finished. Skipped/Failed all {len(files_to_process)} files."
+            )
         if files_processed_successfully:
             st.rerun()
 
@@ -216,7 +280,9 @@ class SidebarUploader:
         """Renders the audio file uploader component in the sidebar."""
         # (remains the same)
         st.subheader("📁 Upload Audio File(s)")
-        st.caption(f"Upload music, voice, etc. (Max duration: {MAX_AUDIO_DURATION_S // 60} min approx, Max size: {MAX_UPLOAD_SIZE_MB} MB)")
+        st.caption(
+            f"Upload music, voice, etc. (Max duration: {MAX_AUDIO_DURATION_S // 60} min approx, Max size: {MAX_UPLOAD_SIZE_MB} MB)"
+        )
         limit_reached = len(self.app_state.get_all_tracks()) >= MAX_TRACK_LIMIT
         if limit_reached:
             st.warning(f"Track limit ({MAX_TRACK_LIMIT}) reached.", icon="⚠️")
@@ -235,7 +301,9 @@ class SidebarUploader:
         """Renders the affirmation input options (TTS, File) in the sidebar."""
         # (remains the same, including expansion logic and text area callbacks)
         st.subheader("🗣️ Add Affirmations")
-        st.caption(f"Uses high-quality offline TTS. Max {MAX_AFFIRMATION_CHARS} chars.")  # Updated caption
+        st.caption(
+            f"Uses high-quality offline TTS. Max {MAX_AFFIRMATION_CHARS} chars."
+        )  # Updated caption
         limit_reached = len(self.app_state.get_all_tracks()) >= MAX_TRACK_LIMIT
         if limit_reached:
             st.warning(f"Track limit ({MAX_TRACK_LIMIT}) reached.", icon="⚠️")
@@ -243,16 +311,23 @@ class SidebarUploader:
         # Apply pending update (remains the same)
         if st.session_state.get(self.affirm_pending_update_key) is not None:
             logger.debug("Applying pending affirmation text update (Advanced Editor).")
-            st.session_state[self.affirmation_text_area_key] = st.session_state[self.affirm_pending_update_key]
+            st.session_state[self.affirmation_text_area_key] = st.session_state[
+                self.affirm_pending_update_key
+            ]
             if st.session_state.get(self.affirm_pending_truncated_key):
-                st.warning(f"⚠️ Expanded text shortened to fit {MAX_AFFIRMATION_CHARS} chars.", icon="✂️")
+                st.warning(
+                    f"⚠️ Expanded text shortened to fit {MAX_AFFIRMATION_CHARS} chars.",
+                    icon="✂️",
+                )
             st.session_state[self.affirm_pending_update_key] = None
             st.session_state[self.affirm_pending_truncated_key] = False
 
         tab1, tab2, tab3 = st.tabs(["Type Text", "Upload File", "Record Audio"])
         with tab1:  # Type Text Tab
             st.caption("Type or paste affirmations below (one per line recommended).")
-            affirmation_text_value = st.session_state.get(self.affirmation_text_area_key, "")
+            affirmation_text_value = st.session_state.get(
+                self.affirmation_text_area_key, ""
+            )
 
             def clear_original_on_edit():  # Callback
                 current_val = st.session_state.get(self.affirmation_text_area_key)
@@ -261,7 +336,9 @@ class SidebarUploader:
                     st.session_state[self.affirm_original_text_key] = None
                     st.session_state[self.expansion_result_key] = None
                     st.session_state[self.expansion_truncated_key] = False
-                    logger.debug("Cleared original affirmation backup and display due to manual edit.")
+                    logger.debug(
+                        "Cleared original affirmation backup and display due to manual edit."
+                    )
 
             # Text Area (remains the same)
             affirmation_text = st.text_area(
@@ -275,32 +352,57 @@ class SidebarUploader:
                 disabled=limit_reached,
                 on_change=clear_original_on_edit,
             )
-            st.caption(f"{len(affirmation_text_value)} / {MAX_AFFIRMATION_CHARS} characters")
+            st.caption(
+                f"{len(affirmation_text_value)} / {MAX_AFFIRMATION_CHARS} characters"
+            )
 
             # Expansion/Undo Buttons (remain the same)
             expand_col, undo_col = st.columns(2)
             with expand_col:  # Expand
                 expand_disabled = limit_reached or not affirmation_text_value.strip()
-                if st.button("✨ Expand Affirmations", key="sidebar_expand_affirmations", disabled=expand_disabled, use_container_width=True):
+                if st.button(
+                    "✨ Expand Affirmations",
+                    key="sidebar_expand_affirmations",
+                    disabled=expand_disabled,
+                    use_container_width=True,
+                ):
                     with st.spinner("Expanding affirmations..."):
                         try:
-                            st.session_state[self.affirm_original_text_key] = affirmation_text_value
-                            expanded_text, truncated = expand_affirmations(base_text=affirmation_text_value, max_chars=MAX_AFFIRMATION_CHARS, multiplier=3)
+                            st.session_state[self.affirm_original_text_key] = (
+                                affirmation_text_value
+                            )
+                            expanded_text, truncated = expand_affirmations(
+                                base_text=affirmation_text_value,
+                                max_chars=MAX_AFFIRMATION_CHARS,
+                                multiplier=3,
+                            )
                             st.session_state[self.expansion_result_key] = expanded_text
                             st.session_state[self.expansion_truncated_key] = truncated
-                            logger.info(f"Affirmation expansion complete (Advanced). Truncated: {truncated}")
+                            logger.info(
+                                f"Affirmation expansion complete (Advanced). Truncated: {truncated}"
+                            )
                             st.session_state[self.affirm_pending_update_key] = None
                             st.session_state[self.affirm_pending_truncated_key] = False
                             st.rerun()
                         except Exception as e:
-                            logger.error(f"Error during affirmation expansion: {e}", exc_info=True)
+                            logger.error(
+                                f"Error during affirmation expansion: {e}",
+                                exc_info=True,
+                            )
                             st.error(f"Failed to expand affirmations: {e}")
                             st.session_state[self.affirm_original_text_key] = None
                             st.session_state[self.expansion_result_key] = None
                             st.session_state[self.expansion_truncated_key] = False
             with undo_col:  # Undo
-                undo_disabled = st.session_state.get(self.affirm_original_text_key) is None
-                if st.button("↩️ Undo Expansion", key="sidebar_undo_expansion", disabled=undo_disabled, use_container_width=True):
+                undo_disabled = (
+                    st.session_state.get(self.affirm_original_text_key) is None
+                )
+                if st.button(
+                    "↩️ Undo Expansion",
+                    key="sidebar_undo_expansion",
+                    disabled=undo_disabled,
+                    use_container_width=True,
+                ):
                     original_text = st.session_state.get(self.affirm_original_text_key)
                     if original_text is not None:
                         st.session_state[self.affirm_pending_update_key] = original_text
@@ -308,16 +410,23 @@ class SidebarUploader:
                         st.session_state[self.affirm_original_text_key] = None
                         st.session_state[self.expansion_result_key] = None
                         st.session_state[self.expansion_truncated_key] = False
-                        logger.info("User staged affirmation undo for next run (Advanced).")
+                        logger.info(
+                            "User staged affirmation undo for next run (Advanced)."
+                        )
                         st.rerun()
                     else:
-                        logger.warning("Undo clicked but no original text found in state (Advanced).")
+                        logger.warning(
+                            "Undo clicked but no original text found in state (Advanced)."
+                        )
 
             # Display Expansion Results (remains the same)
             if st.session_state.get(self.expansion_result_key) is not None:
                 st.markdown("**Suggested Expansions:**")
                 if st.session_state[self.expansion_truncated_key]:
-                    st.warning(f"⚠️ Text shortened to fit {MAX_AFFIRMATION_CHARS} chars.", icon="✂️")
+                    st.warning(
+                        f"⚠️ Text shortened to fit {MAX_AFFIRMATION_CHARS} chars.",
+                        icon="✂️",
+                    )
                 st.text_area(
                     "Expanded Affirmations Result",
                     value=st.session_state[self.expansion_result_key],
@@ -327,13 +436,23 @@ class SidebarUploader:
                     help="Review expansions. Click 'Use Expanded Text' to replace original.",
                     disabled=True,
                 )
-                if st.button("✅ Use Expanded Text", key="sidebar_use_expanded_text", use_container_width=True):
-                    st.session_state[self.affirm_pending_update_key] = st.session_state[self.expansion_result_key]
-                    st.session_state[self.affirm_pending_truncated_key] = st.session_state[self.expansion_truncated_key]
+                if st.button(
+                    "✅ Use Expanded Text",
+                    key="sidebar_use_expanded_text",
+                    use_container_width=True,
+                ):
+                    st.session_state[self.affirm_pending_update_key] = st.session_state[
+                        self.expansion_result_key
+                    ]
+                    st.session_state[self.affirm_pending_truncated_key] = (
+                        st.session_state[self.expansion_truncated_key]
+                    )
                     st.session_state[self.expansion_result_key] = None
                     st.session_state[self.expansion_truncated_key] = False
                     st.session_state[self.affirm_original_text_key] = None
-                    logger.info("User staged expanded affirmations for main text area update (Advanced).")
+                    logger.info(
+                        "User staged expanded affirmations for main text area update (Advanced)."
+                    )
                     st.rerun()
 
             # Generate Track Button (remains the same)
@@ -348,14 +467,24 @@ class SidebarUploader:
             ):
                 if not self._check_track_limit(adding_count=1):
                     return
-                text_to_generate = st.session_state.get(self.affirmation_text_area_key, "")
+                text_to_generate = st.session_state.get(
+                    self.affirmation_text_area_key, ""
+                )
                 if not text_to_generate or not text_to_generate.strip():
                     st.warning("Please enter some text.")
                 elif len(text_to_generate) > MAX_AFFIRMATION_CHARS:
-                    st.error(f"❌ Text too long ({len(text_to_generate)} chars). Max {MAX_AFFIRMATION_CHARS}.")
+                    st.error(
+                        f"❌ Text too long ({len(text_to_generate)} chars). Max {MAX_AFFIRMATION_CHARS}."
+                    )
                 else:
-                    default_name = f"TTS: {text_to_generate[:25]}..." if len(text_to_generate) > 30 else "TTS Affirmations"
-                    generation_successful = self._generate_tts_track(text_to_generate, default_name)
+                    default_name = (
+                        f"TTS: {text_to_generate[:25]}..."
+                        if len(text_to_generate) > 30
+                        else "TTS Affirmations"
+                    )
+                    generation_successful = self._generate_tts_track(
+                        text_to_generate, default_name
+                    )
                     if generation_successful:
                         # Stage text area clear
                         st.session_state[self.affirm_pending_update_key] = ""
@@ -364,7 +493,9 @@ class SidebarUploader:
                         st.session_state[self.expansion_result_key] = None
                         st.session_state[self.expansion_truncated_key] = False
                         st.session_state[self.affirm_original_text_key] = None
-                        logger.info("Staged state clearing after successful TTS generation.")
+                        logger.info(
+                            "Staged state clearing after successful TTS generation."
+                        )
                         st.rerun()
 
         with tab2:  # Upload File Tab
@@ -395,9 +526,13 @@ class SidebarUploader:
                         text_from_file = read_text_file(uploaded_file)
                         if text_from_file is not None:
                             if not text_from_file.strip():
-                                st.warning(f"File '{uploaded_file.name}' appears empty.")
+                                st.warning(
+                                    f"File '{uploaded_file.name}' appears empty."
+                                )
                             elif len(text_from_file) > MAX_AFFIRMATION_CHARS:
-                                st.error(f"❌ Text in file '{uploaded_file.name}' too long ({len(text_from_file)} chars). Max {MAX_AFFIRMATION_CHARS}.")
+                                st.error(
+                                    f"❌ Text in file '{uploaded_file.name}' too long ({len(text_from_file)} chars). Max {MAX_AFFIRMATION_CHARS}."
+                                )
                             else:
                                 # Clear other text states
                                 st.session_state[self.affirmation_text_area_key] = ""
@@ -405,18 +540,29 @@ class SidebarUploader:
                                 st.session_state[self.expansion_truncated_key] = False
                                 st.session_state[self.affirm_original_text_key] = None
                                 st.session_state[self.affirm_pending_update_key] = None
-                                st.session_state[self.affirm_pending_truncated_key] = False
+                                st.session_state[self.affirm_pending_truncated_key] = (
+                                    False
+                                )
                                 # Generate track
-                                generation_successful = self._generate_tts_track(text_from_file, f"File Affirmations ({uploaded_file.name})")
+                                generation_successful = self._generate_tts_track(
+                                    text_from_file,
+                                    f"File Affirmations ({uploaded_file.name})",
+                                )
                     except Exception as e:
-                        logger.error(f"Error processing affirmation file {uploaded_file.name}: {e}")
+                        logger.error(
+                            f"Error processing affirmation file {uploaded_file.name}: {e}"
+                        )
                         st.error(f"Failed to process file {uploaded_file.name}: {e}")
                     if uploaded_file:  # Clear uploader state
                         try:
                             st.session_state[self.affirmation_uploader_key] = None
-                            logger.debug(f"Cleared affirmation uploader state for {uploaded_file.name}")
+                            logger.debug(
+                                f"Cleared affirmation uploader state for {uploaded_file.name}"
+                            )
                         except Exception as e_clear:
-                            logger.error(f"Error clearing affirmation uploader state: {e_clear}")
+                            logger.error(
+                                f"Error clearing affirmation uploader state: {e_clear}"
+                            )
                     if generation_successful:
                         st.rerun()  # Rerun only on success
                 else:
@@ -426,8 +572,15 @@ class SidebarUploader:
             # (remains the same)
             st.caption("Record your own voice directly in the browser.")
             st.info("🎙️ Audio recording feature coming soon!")
-            st.markdown("For now, please record using other software and use the 'Upload Audio File(s)' option.")
-            st.button("Start Recording", key="sidebar_start_recording", disabled=True, use_container_width=True)
+            st.markdown(
+                "For now, please record using other software and use the 'Upload Audio File(s)' option."
+            )
+            st.button(
+                "Start Recording",
+                key="sidebar_start_recording",
+                disabled=True,
+                use_container_width=True,
+            )
 
     # --- Helper Method Specific to this Class ---
     def _generate_tts_track(self, text_content: str, track_name: str) -> bool:
@@ -437,7 +590,9 @@ class SidebarUploader:
         """
         if not self._check_track_limit(adding_count=1):
             return False
-        logger.info(f"SidebarUploader: Generating TTS track '{track_name}' using provided generator.")
+        logger.info(
+            f"SidebarUploader: Generating TTS track '{track_name}' using provided generator."
+        )
         audio_snippet: Optional[AudioData] = None
         snippet_sr: Optional[int] = None
         success = False
@@ -450,11 +605,23 @@ class SidebarUploader:
             # Process the result (remains the same)
             if full_audio is not None and full_sr is not None and full_audio.size > 0:
                 snippet_length_samples = int(TRACK_SNIPPET_DURATION_S * full_sr)
-                audio_snippet = full_audio[:snippet_length_samples] if len(full_audio) > snippet_length_samples else full_audio
+                audio_snippet = (
+                    full_audio[:snippet_length_samples]
+                    if len(full_audio) > snippet_length_samples
+                    else full_audio
+                )
                 snippet_sr = full_sr
                 source_info: SourceInfoTTS = {"type": "tts", "text": text_content}
-                initial_params = {"name": track_name, "track_type": TRACK_TYPE_AFFIRMATION}
-                track_id = self.app_state.add_track(audio_snippet=audio_snippet, source_info=source_info, sr=snippet_sr, initial_params=initial_params)
+                initial_params = {
+                    "name": track_name,
+                    "track_type": TRACK_TYPE_AFFIRMATION,
+                }
+                track_id = self.app_state.add_track(
+                    audio_snippet=audio_snippet,
+                    source_info=source_info,
+                    sr=snippet_sr,
+                    initial_params=initial_params,
+                )
                 st.success(f"'{track_name}' track generated (ID: {track_id[:6]})!")
                 st.toast("Affirmation track added!", icon="✅")
                 success = True

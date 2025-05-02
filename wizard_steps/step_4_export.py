@@ -16,7 +16,9 @@ try:
     # from pydub import AudioSegment # No longer needed here, check happens in quick_wizard
     PYDUB_AVAILABLE = True  # Assume available if library installed
 except ImportError:
-    PYDUB_AVAILABLE = False  # Should ideally check based on quick_wizard's PYDUB_AVAILABLE
+    PYDUB_AVAILABLE = (
+        False  # Should ideally check based on quick_wizard's PYDUB_AVAILABLE
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -47,17 +49,32 @@ def render_step_4(wizard):
         summary_data.append("- **Affirmations:** ⚠️ **MISSING** (Go back to Step 1)")
     bg_choice = st.session_state.get("wizard_background_choice")
     bg_volume = st.session_state.get("wizard_background_volume", 0)
-    if bg_choice == "upload" and st.session_state.get("wizard_background_audio") is not None:
-        summary_data.append(f"- **Background:** Uploaded Audio (Volume: {bg_volume:.0%})")
-    elif bg_choice == "noise" and st.session_state.get("wizard_background_audio") is not None:
-        noise_type = st.session_state.get("wizard_background_noise_type", "Unknown Noise")
+    if (
+        bg_choice == "upload"
+        and st.session_state.get("wizard_background_audio") is not None
+    ):
+        summary_data.append(
+            f"- **Background:** Uploaded Audio (Volume: {bg_volume:.0%})"
+        )
+    elif (
+        bg_choice == "noise"
+        and st.session_state.get("wizard_background_audio") is not None
+    ):
+        noise_type = st.session_state.get(
+            "wizard_background_noise_type", "Unknown Noise"
+        )
         summary_data.append(f"- **Background:** {noise_type} (Volume: {bg_volume:.0%})")
     else:
         summary_data.append("- **Background:** None")
     freq_choice = st.session_state.get("wizard_frequency_choice", "None")
     freq_volume = st.session_state.get("wizard_frequency_volume", 0)
-    if freq_choice != "None" and st.session_state.get("wizard_frequency_audio") is not None:
-        summary_data.append(f"- **Frequency:** {freq_choice} (Volume: {freq_volume:.0%})")
+    if (
+        freq_choice != "None"
+        and st.session_state.get("wizard_frequency_audio") is not None
+    ):
+        summary_data.append(
+            f"- **Frequency:** {freq_choice} (Volume: {freq_volume:.0%})"
+        )
     else:
         summary_data.append("- **Frequency:** None")
     st.markdown("\n".join(summary_data))
@@ -88,7 +105,9 @@ def render_step_4(wizard):
     else:
         help_text += " MP3 export disabled (requires 'pydub' library and 'ffmpeg')."
     try:
-        current_format_index = export_formats.index(st.session_state.wizard_export_format)
+        current_format_index = export_formats.index(
+            st.session_state.wizard_export_format
+        )
     except ValueError:
         current_format_index = 0
     st.session_state.wizard_export_format = st.radio(
@@ -104,7 +123,9 @@ def render_step_4(wizard):
     # --- MODIFIED: Disable button based on processing flag ---
     is_processing = st.session_state.get("wizard_processing_active", False)
     affirmations_missing = st.session_state.get("wizard_affirmation_audio") is None
-    mp3_unavailable = st.session_state.wizard_export_format == "MP3" and not PYDUB_AVAILABLE
+    mp3_unavailable = (
+        st.session_state.wizard_export_format == "MP3" and not PYDUB_AVAILABLE
+    )
     # Disable if processing, or if affirmations missing, or if MP3 chosen but unavailable
     export_disabled = is_processing or affirmations_missing or mp3_unavailable
 
@@ -118,7 +139,11 @@ def render_step_4(wizard):
     else:
         export_tooltip = "Click to generate the final audio mix."
 
-    generate_button_label = "⏳ Processing..." if is_processing else f"Generate & Prepare Download (. {st.session_state.wizard_export_format.lower()})"
+    generate_button_label = (
+        "⏳ Processing..."
+        if is_processing
+        else f"Generate & Prepare Download (. {st.session_state.wizard_export_format.lower()})"
+    )
 
     if st.button(
         generate_button_label,
@@ -139,7 +164,10 @@ def render_step_4(wizard):
     if st.session_state.get("wizard_processing_active", False):
         # Check if we need to START processing (i.e., buffer doesn't exist yet from this run)
         # This prevents re-processing if the page reruns for other reasons while processing is True
-        if st.session_state.get("wizard_export_buffer") is None and st.session_state.get("wizard_export_error") is None:
+        if (
+            st.session_state.get("wizard_export_buffer") is None
+            and st.session_state.get("wizard_export_error") is None
+        ):
             logger.info("Processing flag is True, starting export process...")
             # Call the processing method on the main wizard instance
             wizard._process_and_export()
@@ -150,7 +178,9 @@ def render_step_4(wizard):
 
     # --- Show Download Button or Error --- (Keep as is)
     if st.session_state.get("wizard_export_buffer"):
-        sanitized_filename = re.sub(r'[\\/*?:"<>|]', "", st.session_state.wizard_output_filename).strip()
+        sanitized_filename = re.sub(
+            r'[\\/*?:"<>|]', "", st.session_state.wizard_output_filename
+        ).strip()
         if not sanitized_filename:
             sanitized_filename = "mindmorph_quick_mix"
         file_ext = st.session_state.wizard_export_format.lower()
@@ -174,12 +204,27 @@ def render_step_4(wizard):
     st.divider()
     col_nav_1, col_nav_2, col_nav_3 = st.columns([1, 2, 2])
     with col_nav_1:  # Home
-        if st.button("🏠 Back to Home", key="wizard_step4_home", use_container_width=True, help="Exit Wizard and return to main menu."):
+        if st.button(
+            "🏠 Back to Home",
+            key="wizard_step4_home",
+            use_container_width=True,
+            help="Exit Wizard and return to main menu.",
+        ):
             wizard._reset_wizard_state()
     with col_nav_2:  # Back
         # Disable back button if processing
-        if st.button("⬅️ Back: Frequency", key="wizard_step4_back", use_container_width=True, disabled=is_processing):
+        if st.button(
+            "⬅️ Back: Frequency",
+            key="wizard_step4_back",
+            use_container_width=True,
+            disabled=is_processing,
+        ):
             if not is_processing:  # Double check before navigating
                 wizard._go_to_step(3)
     with col_nav_3:  # Finish Placeholder
-        st.button("Finish", key="wizard_step4_finish_placeholder", disabled=True, use_container_width=True)
+        st.button(
+            "Finish",
+            key="wizard_step4_finish_placeholder",
+            disabled=True,
+            use_container_width=True,
+        )

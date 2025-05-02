@@ -143,7 +143,12 @@ def main():
                 """
             )
             st.markdown("")
-            if st.button("Start Wizard", key="start_wizard_button", use_container_width=True, type="primary"):
+            if st.button(
+                "Start Wizard",
+                key="start_wizard_button",
+                use_container_width=True,
+                type="primary",
+            ):
                 st.session_state.selected_workflow = "wizard"
                 # Initialization now happens within QuickWizard class
                 st.rerun()
@@ -160,7 +165,11 @@ def main():
                 """
             )
             st.markdown("")
-            if st.button("Open Advanced Editor", key="start_advanced_button", use_container_width=True):
+            if st.button(
+                "Open Advanced Editor",
+                key="start_advanced_button",
+                use_container_width=True,
+            ):
                 st.session_state.selected_workflow = "advanced"
                 if "app_mode" not in st.session_state:
                     st.session_state.app_mode = "Easy"
@@ -170,11 +179,19 @@ def main():
 
         # --- ADD PATREON SUPPORT BUTTON ---
         st.markdown("#### ❤️ Support MindMorph")
-        st.markdown("If you find MindMorph useful, please consider supporting its development on Patreon.")
+        st.markdown(
+            "If you find MindMorph useful, please consider supporting its development on Patreon."
+        )
         if PATERON_URL and PATERON_URL != "YOUR_PATERON_URL_HERE":
             col_support_1, col_support_2, col_support_3 = st.columns([1, 1.5, 1])
             with col_support_2:
-                st.link_button("💖 Join Patreon", url=PATERON_URL, help="Support MindMorph development.", use_container_width=True, type="secondary")
+                st.link_button(
+                    "💖 Join Patreon",
+                    url=PATERON_URL,
+                    help="Support MindMorph development.",
+                    use_container_width=True,
+                    type="secondary",
+                )
         else:
             logger.warning("Patreon URL not configured.")
         st.markdown("---")
@@ -192,7 +209,9 @@ def main():
             wizard.render_wizard()  # Wizard UI takes over main area
         except Exception as e:
             logger.exception("Failed to initialize or render Quick Wizard.")
-            st.error(f"Failed to start Quick Wizard: {e}. Please check logs and TTS model configuration.")
+            st.error(
+                f"Failed to start Quick Wizard: {e}. Please check logs and TTS model configuration."
+            )
             # Add button to go back home
             if st.button("Return to Home"):
                 reset_advanced_editor_state()  # Use same reset function
@@ -220,10 +239,14 @@ def main():
                 logger.info("PiperTTSGenerator initialized for Advanced Editor.")
             # --- End TTS Instantiation ---
             if "project_handler" not in st.session_state:
-                st.session_state.project_handler = ProjectHandler(st.session_state.app_state)
+                st.session_state.project_handler = ProjectHandler(
+                    st.session_state.app_state
+                )
             if "ui_manager" not in st.session_state:
                 # Pass the instantiated TTS generator
-                st.session_state.ui_manager = UIManager(st.session_state.app_state, st.session_state.tts_generator)
+                st.session_state.ui_manager = UIManager(
+                    st.session_state.app_state, st.session_state.tts_generator
+                )
 
             # --- Render Top Bar for Advanced Editor ---
             st.title("🧠 MindMorph - Advanced Editor")
@@ -236,8 +259,16 @@ def main():
                     current_mode_index = mode_options.index(st.session_state.app_mode)
                 except ValueError:
                     current_mode_index = 0
-                selected_mode = st.radio("Editor Mode:", options=mode_options, index=current_mode_index, key="mode_selector_radio", horizontal=True)
-                st.caption("Easy mode simplifies the interface; Advanced mode shows all track controls.")
+                selected_mode = st.radio(
+                    "Editor Mode:",
+                    options=mode_options,
+                    index=current_mode_index,
+                    key="mode_selector_radio",
+                    horizontal=True,
+                )
+                st.caption(
+                    "Easy mode simplifies the interface; Advanced mode shows all track controls."
+                )
                 if selected_mode != st.session_state.app_mode:
                     logger.info(f"Advanced editor mode changed to '{selected_mode}'")
                     st.session_state.app_mode = selected_mode
@@ -248,7 +279,12 @@ def main():
                         del st.session_state.preview_audio_data
                     st.rerun()
             with header_cols[1]:  # Back to Home Button
-                if st.button("🏠 Back to Home", key="advanced_back_home", help="Exit Advanced Editor.", use_container_width=True):
+                if st.button(
+                    "🏠 Back to Home",
+                    key="advanced_back_home",
+                    help="Exit Advanced Editor.",
+                    use_container_width=True,
+                ):
                     reset_advanced_editor_state()
                     st.rerun()
             st.markdown("---")
@@ -258,14 +294,18 @@ def main():
 
         except Exception as e:
             logger.exception("Failed to initialize or render Advanced Editor.")
-            st.error(f"Failed to start Advanced Editor: {e}. Please check logs and TTS model configuration.")
+            st.error(
+                f"Failed to start Advanced Editor: {e}. Please check logs and TTS model configuration."
+            )
             # Add button to go back home
             if st.button("Return to Home"):
                 reset_advanced_editor_state()
                 st.rerun()
 
     else:  # Invalid state
-        logger.warning(f"Invalid selected_workflow state: {st.session_state.selected_workflow}. Resetting.")
+        logger.warning(
+            f"Invalid selected_workflow state: {st.session_state.selected_workflow}. Resetting."
+        )
         st.session_state.selected_workflow = None
         st.rerun()
 
@@ -281,7 +321,9 @@ if __name__ == "__main__":
         logger.exception("A critical error occurred during main execution.")
         # Display error prominently if possible
         st.error(f"A critical error stopped the application: {e}")
-        st.warning("Please check the application logs for more details and ensure configuration (e.g., TTS model paths) is correct.")
+        st.warning(
+            "Please check the application logs for more details and ensure configuration (e.g., TTS model paths) is correct."
+        )
         # Optionally add a button to reset everything
         if st.button("Attempt Reset"):
             reset_advanced_editor_state()  # Try resetting state

@@ -16,7 +16,11 @@ from audio_utils.audio_io import save_audio_to_bytesio
 from audio_utils.audio_mixers import mix_wizard_tracks
 
 # Import wizard state management
-from config import GLOBAL_SR, QUICK_SUBLIMINAL_PRESET_SPEED, QUICK_SUBLIMINAL_PRESET_VOLUME
+from config import (
+    GLOBAL_SR,
+    QUICK_SUBLIMINAL_PRESET_SPEED,
+    QUICK_SUBLIMINAL_PRESET_VOLUME,
+)
 
 # Import the new Piper TTS Generator
 from tts.piper_tts import PiperTTSGenerator
@@ -61,14 +65,18 @@ class QuickWizard:
             self.tts_generator = PiperTTSGenerator()
             logger.info("PiperTTSGenerator initialized successfully for QuickWizard.")
         except Exception as e:
-            logger.exception("CRITICAL: Failed to initialize PiperTTSGenerator in QuickWizard.")
+            logger.exception(
+                "CRITICAL: Failed to initialize PiperTTSGenerator in QuickWizard."
+            )
             raise RuntimeError(f"Failed to initialize TTS engine: {e}") from e
         initialize_wizard_state()
         logger.debug("QuickWizard initialized and state ensured.")
 
     # --- State Synchronization Callbacks --- (Keep as is)
     def sync_affirmation_text(self):  # ... (no changes needed)
-        st.session_state.wizard_affirmation_text = st.session_state.get("wizard_affirm_text_area", "")
+        st.session_state.wizard_affirmation_text = st.session_state.get(
+            "wizard_affirm_text_area", ""
+        )
         if st.session_state.get("wizard_affirmation_source") == "text":
             st.session_state.wizard_affirmation_audio = None
             st.session_state.wizard_affirmation_sr = None
@@ -77,7 +85,9 @@ class QuickWizard:
     def clear_affirmation_upload_state(self):
         pass
 
-    def sync_background_choice(self, choice_options: List[str]):  # ... (no changes needed)
+    def sync_background_choice(
+        self, choice_options: List[str]
+    ):  # ... (no changes needed)
         selected_label = st.session_state.get("wizard_bg_choice_radio")
         if not selected_label:
             return
@@ -110,7 +120,9 @@ class QuickWizard:
             logger.warning(f"Invalid step navigation requested: {step}")
 
     # --- Helper Function for Looping Audio --- (Keep as is)
-    def _loop_audio_to_length(self, audio_data: AudioData, target_length: int) -> AudioData:  # ... (no changes needed)
+    def _loop_audio_to_length(
+        self, audio_data: AudioData, target_length: int
+    ) -> AudioData:  # ... (no changes needed)
         current_length = audio_data.shape[0]
         if current_length == target_length:
             return audio_data
@@ -134,16 +146,28 @@ class QuickWizard:
         # --- ADDED: Wrap processing in try...finally to reset lock ---
         try:
             # Get base audio data and sample rates
-            affirmation_audio_data: Optional[AudioData] = st.session_state.get("wizard_affirmation_audio")
-            affirmation_sr: Optional[int] = st.session_state.get("wizard_affirmation_sr")
-            background_audio_data: Optional[AudioData] = st.session_state.get("wizard_background_audio")
+            affirmation_audio_data: Optional[AudioData] = st.session_state.get(
+                "wizard_affirmation_audio"
+            )
+            affirmation_sr: Optional[int] = st.session_state.get(
+                "wizard_affirmation_sr"
+            )
+            background_audio_data: Optional[AudioData] = st.session_state.get(
+                "wizard_background_audio"
+            )
             background_sr: Optional[int] = st.session_state.get("wizard_background_sr")
-            frequency_audio_data: Optional[AudioData] = st.session_state.get("wizard_frequency_audio")
+            frequency_audio_data: Optional[AudioData] = st.session_state.get(
+                "wizard_frequency_audio"
+            )
             frequency_sr: Optional[int] = st.session_state.get("wizard_frequency_sr")
 
             # Get volume settings
-            background_volume: float = st.session_state.get("wizard_background_volume", 0.7)
-            frequency_volume: float = st.session_state.get("wizard_frequency_volume", 0.2)
+            background_volume: float = st.session_state.get(
+                "wizard_background_volume", 0.7
+            )
+            frequency_volume: float = st.session_state.get(
+                "wizard_frequency_volume", 0.2
+            )
 
             # Validate Affirmation Audio
             if affirmation_audio_data is None or affirmation_sr is None:
@@ -152,7 +176,9 @@ class QuickWizard:
                 return  # Exit early
 
             # Determine Affirmation Speed/Volume
-            apply_quick_settings: bool = st.session_state.get("wizard_apply_quick_settings", True)
+            apply_quick_settings: bool = st.session_state.get(
+                "wizard_apply_quick_settings", True
+            )
             if apply_quick_settings:
                 eff_affirm_speed: float = QUICK_SUBLIMINAL_PRESET_SPEED
                 eff_affirm_volume: float = QUICK_SUBLIMINAL_PRESET_VOLUME
@@ -162,32 +188,44 @@ class QuickWizard:
                 eff_affirm_volume = 1.0
                 logger.info("Using original speed/volume for affirmations.")
 
-            export_format: str = st.session_state.get("wizard_export_format", "wav").lower()
+            export_format: str = st.session_state.get(
+                "wizard_export_format", "wav"
+            ).lower()
 
             # Prepare Tracks for Mixing
             try:
                 if affirmation_sr != GLOBAL_SR:
-                    logger.warning(f"Affirmation SR ({affirmation_sr}) != GLOBAL_SR ({GLOBAL_SR}).")
+                    logger.warning(
+                        f"Affirmation SR ({affirmation_sr}) != GLOBAL_SR ({GLOBAL_SR})."
+                    )
                 target_length_samples = affirmation_audio_data.shape[0]
-                logger.info(f"Target mix length: {target_length_samples / GLOBAL_SR:.2f}s")
+                logger.info(
+                    f"Target mix length: {target_length_samples / GLOBAL_SR:.2f}s"
+                )
                 affirmation_tuple: AudioTuple = (affirmation_audio_data, GLOBAL_SR)
                 background_tuple: AudioTuple = None
                 if background_audio_data is not None and background_sr is not None:
                     if background_sr != GLOBAL_SR:
                         logger.warning(f"Background SR mismatch.")
-                    looped_background = self._loop_audio_to_length(background_audio_data, target_length_samples)
+                    looped_background = self._loop_audio_to_length(
+                        background_audio_data, target_length_samples
+                    )
                     background_tuple = (looped_background, GLOBAL_SR)
                     logger.info(f"Background audio prepared.")
                 frequency_tuple: AudioTuple = None
                 if frequency_audio_data is not None and frequency_sr is not None:
                     if frequency_sr != GLOBAL_SR:
                         logger.warning(f"Frequency SR mismatch.")
-                    looped_frequency = self._loop_audio_to_length(frequency_audio_data, target_length_samples)
+                    looped_frequency = self._loop_audio_to_length(
+                        frequency_audio_data, target_length_samples
+                    )
                     frequency_tuple = (looped_frequency, GLOBAL_SR)
                     logger.info(f"Frequency audio prepared.")
             except Exception as e_prep:
                 logger.exception("Error preparing tracks for mixing.")
-                st.session_state.wizard_export_error = f"Track Preparation Failed: {e_prep}"
+                st.session_state.wizard_export_error = (
+                    f"Track Preparation Failed: {e_prep}"
+                )
                 return  # Exit early
 
             # Mix Tracks
@@ -218,15 +256,21 @@ class QuickWizard:
                         expected_min_size = full_mix.shape[0] * 2 * 2 * 0.9
                         logger.info(f"Generated WAV buffer size: {buffer_size} bytes.")
                         if buffer_size < expected_min_size:
-                            logger.error(f"WAV buffer size ({buffer_size}) seems too small!")
-                            st.session_state.wizard_export_error = "Generated WAV buffer was unexpectedly small."
+                            logger.error(
+                                f"WAV buffer size ({buffer_size}) seems too small!"
+                            )
+                            st.session_state.wizard_export_error = (
+                                "Generated WAV buffer was unexpectedly small."
+                            )
                             export_buffer = None
                         else:
                             st.session_state.wizard_export_buffer = export_buffer
                             logger.info("Wizard WAV mix buffer generated.")
                     else:
                         logger.error("save_audio_to_bytesio failed (WAV).")
-                        st.session_state.wizard_export_error = "Failed to save WAV buffer."
+                        st.session_state.wizard_export_error = (
+                            "Failed to save WAV buffer."
+                        )
                         export_buffer = None
                 elif export_format == "mp3" and PYDUB_AVAILABLE:
                     # MP3 Export Logic (keep existing)
@@ -240,7 +284,12 @@ class QuickWizard:
                         elif audio_int16.ndim == 2 and audio_int16.shape[1] == 1:
                             channels = 1
                             audio_int16 = audio_int16.flatten()
-                        segment = AudioSegment(data=audio_int16.tobytes(), sample_width=audio_int16.dtype.itemsize, frame_rate=GLOBAL_SR, channels=channels)
+                        segment = AudioSegment(
+                            data=audio_int16.tobytes(),
+                            sample_width=audio_int16.dtype.itemsize,
+                            frame_rate=GLOBAL_SR,
+                            channels=channels,
+                        )
                         if channels == 1:
                             segment = segment.set_channels(2)
                         mp3_buffer = BytesIO()
@@ -248,10 +297,16 @@ class QuickWizard:
                         mp3_buffer.seek(0)
                         if mp3_buffer.getbuffer().nbytes > 0:
                             buffer_size = mp3_buffer.getbuffer().nbytes
-                            logger.info(f"Generated MP3 export buffer size: {buffer_size} bytes.")
+                            logger.info(
+                                f"Generated MP3 export buffer size: {buffer_size} bytes."
+                            )
                             if buffer_size < 1000:
-                                logger.error(f"MP3 buffer size ({buffer_size}) seems too small!")
-                                st.session_state.wizard_export_error = "Generated MP3 buffer was unexpectedly small."
+                                logger.error(
+                                    f"MP3 buffer size ({buffer_size}) seems too small!"
+                                )
+                                st.session_state.wizard_export_error = (
+                                    "Generated MP3 buffer was unexpectedly small."
+                                )
                                 export_buffer = None
                             else:
                                 st.session_state.wizard_export_buffer = mp3_buffer
@@ -259,23 +314,37 @@ class QuickWizard:
                                 export_buffer = mp3_buffer
                         else:
                             logger.error("MP3 export resulted in empty buffer.")
-                            st.session_state.wizard_export_error = "MP3 export failed (empty buffer)."
+                            st.session_state.wizard_export_error = (
+                                "MP3 export failed (empty buffer)."
+                            )
                             export_buffer = None
                     except Exception as e_mp3:
                         logger.exception("Wizard failed to export mix as MP3.")
-                        st.session_state.wizard_export_error = f"MP3 Export Failed: {e_mp3}."
+                        st.session_state.wizard_export_error = (
+                            f"MP3 Export Failed: {e_mp3}."
+                        )
                         export_buffer = None
                 # Handle other cases (MP3 unavailable, unsupported format)
                 elif export_format == "mp3":
-                    st.session_state.wizard_export_error = "MP3 requires 'pydub' and 'ffmpeg'."
+                    st.session_state.wizard_export_error = (
+                        "MP3 requires 'pydub' and 'ffmpeg'."
+                    )
                 else:
-                    st.session_state.wizard_export_error = f"Unsupported format '{export_format}'."
-                if export_buffer is None and not st.session_state.get("wizard_export_error"):
-                    st.session_state.wizard_export_error = "Export failed for unknown reason."  # Fallback error
+                    st.session_state.wizard_export_error = (
+                        f"Unsupported format '{export_format}'."
+                    )
+                if export_buffer is None and not st.session_state.get(
+                    "wizard_export_error"
+                ):
+                    st.session_state.wizard_export_error = (
+                        "Export failed for unknown reason."  # Fallback error
+                    )
 
             except Exception as e_mix_save:
                 logger.exception("Error during wizard mix/save.")
-                st.session_state.wizard_export_error = f"Processing Failed: {e_mix_save}"
+                st.session_state.wizard_export_error = (
+                    f"Processing Failed: {e_mix_save}"
+                )
 
         # --- ADDED: finally block to reset the processing flag ---
         finally:
@@ -295,7 +364,10 @@ class QuickWizard:
         steps_display = ["Affirmations", "Background", "Frequency", "Export"]
         progress_step = max(1, min(step, len(steps_display)))
         try:
-            st.progress((progress_step) / len(steps_display), text=f"Step {progress_step}: {steps_display[progress_step - 1]}")
+            st.progress(
+                (progress_step) / len(steps_display),
+                text=f"Step {progress_step}: {steps_display[progress_step - 1]}",
+            )
         except IndexError:
             st.progress(0.0)
             logger.warning(f"Progress bar index out of range: {progress_step}")

@@ -220,14 +220,42 @@ def main():
         st.markdown("---")
 
         # --- ADD PATREON SUPPORT BUTTON ---
-        st.markdown("#### ❤️ Support MindMorph")
-        st.markdown("If you find MindMorph useful, please consider supporting its development on Patreon.")
+        # Use markdown with HTML to center the entire block
+        st.markdown(
+            """
+        <div style="text-align: center;">
+            <h4>❤️ Support MindMorph</h4>
+            <p>If you find MindMorph useful, please consider supporting its development on Patreon.</p>
+        </div>
+        """,
+            unsafe_allow_html=True,
+        )
+
+        # Center the button using markdown/HTML as well, or keep columns if preferred for button width control
         if PATERON_URL and PATERON_URL != "YOUR_PATERON_URL_HERE":
-            col_support_1, col_support_2, col_support_3 = st.columns([1, 1.5, 1])
-            with col_support_2:
-                st.link_button("💖 Join Patreon", url=PATERON_URL, help="Support MindMorph development.", use_container_width=True, type="secondary")
+            # Option 1: Centered button using markdown (simpler)
+            st.markdown(
+                f"""
+            <div style="text-align: center; margin-top: 10px; margin-bottom: 10px;">
+                <a href="{PATERON_URL}" target="_blank">
+                    <button style="padding: 10px 20px; background-color: #f0f2f6; color: #31333F; border: 1px solid #ced4da; border-radius: 0.25rem; cursor: pointer; font-weight: bold;">
+                        💖 Join Patreon
+                    </button>
+                </a>
+            </div>
+            """,
+                unsafe_allow_html=True,
+            )
+
+            # Option 2: Keep columns if you specifically need the button width control they provide
+            # col_support_1, col_support_2, col_support_3 = st.columns([1, 1.5, 1])
+            # with col_support_2:
+            #     st.link_button("💖 Join Patreon", url=PATERON_URL, help="Support MindMorph development.", use_container_width=True, type="secondary")
+
         else:
+            # Log warning if URL not configured (no UI change needed here)
             logger.warning("Patreon URL not configured.")
+
         st.markdown("---")
         # --- END PATREON SUPPORT BUTTON ---
 

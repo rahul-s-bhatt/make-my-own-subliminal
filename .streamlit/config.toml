@@ -1,54 +1,23 @@
-# .streamlit/config.toml
-
-# Version of the configuration file
-version = 1
-
 [theme]
-# Primary accent color for interactive elements
 primaryColor = "#9b59b6" # A muted purple
 
-# Background color for the main content area
 backgroundColor = "#1e1e1e" # Dark grey, almost black
 
-# Background color for sidebar and most interactive widgets
 secondaryBackgroundColor = "#2c2c2c" # Slightly lighter dark grey
 
-# Color used for almost all text
 textColor = "#fafafa" # Off-white/very light grey for good contrast
-
-# Font family for all text in the app, except code blocks
-# Choose a clean, readable sans-serif font. "sans serif" is a safe default.
-# Other options: "Inter", "Source Sans Pro", "Roboto"
 font = "sans serif"
 
 [server]
-# Max upload size in megabytes (adjust as needed for your audio files)
 maxUploadSize = 10
-# Allows Streamlit to run headless, common in cloud deployments
 headless = true
-# Allows CORS requests if needed (e.g., for external JS interaction, use with caution)
-# enableCORS = false
-# enableXsrfProtection = true # Recommended for security
 
 [client]
-# Show a warning when a large file is uploaded?
 showWarningOnDirectExecution = false
-# Gather usage statistics? Set to false if preferred.
 gatherUsageStats = true
 
 [logger]
-# Set the logging level for Streamlit's internal logger and potentially your app's logger
-# (if your setup_logging function respects this).
-# Levels: DEBUG, INFO, WARNING, ERROR, CRITICAL
-# Use INFO or WARNING for production/Cloud, DEBUG for local development.
 level = "INFO"
-# Note: Logging specifically to a FILE needs configuration in your Python logging setup
-# (e.g., in utils.setup_logging()). File access on Streamlit Community Cloud may be limited.
-# messageFormat = "%(asctime)s %(levelname) -7s [%(name)s] %(message)s" # Example format
 
 [deprecation]
-# Show deprecation warnings? Useful during development.
 showPyplotGlobalUse = false
-
-# Note: Graceful shutdown needs to be handled in your Python code (e.g., main.py)
-# by catching signals like SIGTERM, not configured here.

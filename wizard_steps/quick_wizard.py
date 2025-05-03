@@ -1,6 +1,6 @@
 # quick_wizard.py
 # ==========================================
-# Quick Create Wizard Orchestrator for MindMorph (Added debug logging for mixing)
+# Quick Create Wizard Orchestrator for MindMorph (Cached TTS Generator Instance)
 # ==========================================
 
 import logging
@@ -58,22 +58,53 @@ logger = logging.getLogger(__name__)
 AudioTuple = Optional[Tuple[AudioData, int]]
 
 
+# --- ADDED: Caching function for the TTS Generator instance ---
+@st.cache_resource(show_spinner="Initializing TTS Engine...")
+def get_tts_generator() -> PiperTTSGenerator:
+    """
+    Initializes and caches the PiperTTSGenerator instance.
+    This ensures the generator (and its loaded model) is created only once per session.
+    """
+    logger.info("Creating and caching PiperTTSGenerator instance.")
+    try:
+        # PiperTTSGenerator internally uses @st.cache_resource for model loading
+        generator = PiperTTSGenerator()
+        logger.info("PiperTTSGenerator instance created successfully.")
+        return generator
+    except Exception as e:
+        logger.exception("CRITICAL: Failed to create PiperTTSGenerator instance.")
+        # Re-raise or handle appropriately, maybe return None and check later
+        raise RuntimeError(f"Failed to initialize TTS engine: {e}") from e
+
+
+# --- END ADDED ---
+
+
 class QuickWizard:
     """Manages the state and UI rendering orchestration for the Quick Create Wizard."""
 
     def __init__(self):
         """Initializes the QuickWizard."""
         try:
-            self.tts_generator = PiperTTSGenerator()
-            logger.info("PiperTTSGenerator initialized successfully for QuickWizard.")
-        except NameError:
-            logger.exception("CRITICAL: PiperTTSGenerator class not found. Check imports.")
-            self.tts_generator = None
-            st.error("FATAL: TTS Engine class not found. Wizard cannot function.")
-        except Exception as e:
-            logger.exception("CRITICAL: Failed to initialize PiperTTSGenerator in QuickWizard.")
-            self.tts_generator = None
+            # --- MODIFIED: Get the cached TTS generator instance ---
+            self.tts_generator = get_tts_generator()
+            logger.info("Retrieved TTS Generator instance (cached or new).")
+            # --- END MODIFIED ---
+            if self.tts_generator is None:
+                # This case might happen if get_tts_generator fails and handles the error by returning None
+                raise RuntimeError("TTS Generator instance is None after attempting retrieval.")
+
+        # --- MODIFIED: Catch potential RuntimeError from get_tts_generator ---
+        except (NameError, RuntimeError) as e:
+            logger.exception(f"CRITICAL: Failed to get or initialize TTS Generator: {e}")
+            self.tts_generator = None  # Ensure it's None on failure
+            # Display error in Streamlit UI immediately if possible
             st.error(f"FATAL: Failed to initialize TTS engine: {e}. Wizard cannot function.")
+        # --- END MODIFIED ---
+        except Exception as e:  # Catch any other unexpected exceptions during init
+            logger.exception(f"CRITICAL: Unexpected error during QuickWizard initialization: {e}")
+            self.tts_generator = None
+            st.error(f"FATAL: An unexpected error occurred during initialization: {e}. Wizard cannot function.")
 
         initialize_wizard_state()
         # Ensure preview state variables exist
@@ -163,6 +194,9 @@ class QuickWizard:
     def _generate_preview_mix(self, duration_seconds: int) -> AudioTuple:
         """Generates a short preview mix based on current Step 4 settings."""
         logger.info(f"Starting preview mix generation ({duration_seconds}s).")
+        if not self.tts_generator:  # Check if generator exists
+            logger.error("Preview failed: TTS generator not available.")
+            raise RuntimeError("TTS Generator is not initialized.")
         try:
             # Get Audio Data and SR
             affirmation_audio: Optional[AudioData] = st.session_state.get("wizard_affirmation_audio")
@@ -226,13 +260,12 @@ class QuickWizard:
                     f"Skipping frequency for preview. Audio exists: {frequency_audio is not None}, SR match: {frequency_sr == GLOBAL_SR}, Type valid: {isinstance(frequency_audio, np.ndarray)}, Size > 0: {frequency_audio.size > 0 if isinstance(frequency_audio, np.ndarray) else 'N/A'}"
                 )
 
-            # --- Mix Preview Tracks ---
+            # Mix Preview Tracks
             logger.info("Mixing preview tracks...")
-            # --- ADDED: Debug logging before mix call ---
             logger.info(f"Preview Mixing - Affirm Vol: {affirmation_volume:.2f}, Speed: {affirmation_speed:.2f}")
             logger.info(f"Preview Mixing - BG Audio Present: {background_tuple is not None}, BG Vol: {background_volume:.2f}")
             logger.info(f"Preview Mixing - Freq Audio Present: {frequency_tuple is not None}, Freq Vol: {frequency_volume:.2f}")
-            # --- END ADDED ---
+
             preview_mix = mix_wizard_tracks(
                 affirmation_audio=affirmation_tuple,
                 background_audio=background_tuple,
@@ -258,6 +291,11 @@ class QuickWizard:
     def _process_and_export(self):
         """Handles the final processing and export logic for the wizard."""
         logger.info("Starting wizard export process.")
+        if not self.tts_generator:  # Check if generator exists
+            logger.error("Export failed: TTS generator not available.")
+            st.session_state.wizard_export_error = "TTS Generator is not initialized."
+            return
+
         st.session_state.wizard_export_buffer = None
         st.session_state.wizard_export_error = None
         processing_success = False
@@ -322,7 +360,7 @@ class QuickWizard:
                             background_audio_data = np.stack([background_audio_data] * 2, axis=-1)
                         elif background_audio_data.ndim != 2:
                             logger.warning(f"Skipping background: Unsupported audio dimensions: {background_audio_data.ndim}.")
-                            background_audio_data = None  # Set to None to prevent further processing
+                            background_audio_data = None
 
                         if background_audio_data is not None:
                             looped_background = self._loop_audio_to_length(background_audio_data, target_length_samples)
@@ -343,7 +381,7 @@ class QuickWizard:
                             frequency_audio_data = np.stack([frequency_audio_data] * 2, axis=-1)
                         elif frequency_audio_data.ndim != 2:
                             logger.warning(f"Skipping frequency: Unsupported audio dimensions: {frequency_audio_data.ndim}.")
-                            frequency_audio_data = None  # Set to None to prevent further processing
+                            frequency_audio_data = None
 
                         if frequency_audio_data is not None:
                             looped_frequency = self._loop_audio_to_length(frequency_audio_data, target_length_samples)
@@ -357,18 +395,17 @@ class QuickWizard:
                 st.session_state.wizard_export_error = f"Track Preparation Failed: {e_prep}"
                 return
 
-            # --- Mix Tracks ---
+            # Mix Tracks
             logger.info("Wizard mixing tracks...")
             full_mix: Optional[AudioData] = None
             try:
                 if "mix_wizard_tracks" not in globals() or not callable(mix_wizard_tracks):
                     raise NameError("Mixing function 'mix_wizard_tracks' is not available.")
 
-                # --- ADDED: Debug logging before mix call ---
                 logger.info(f"Final Mixing - Affirm Vol: {eff_affirm_volume:.2f}, Speed: {eff_affirm_speed:.2f}")
                 logger.info(f"Final Mixing - BG Audio Present: {background_tuple is not None}, BG Vol: {background_volume:.2f}")
                 logger.info(f"Final Mixing - Freq Audio Present: {frequency_tuple is not None}, Freq Vol: {frequency_volume:.2f}")
-                # --- END ADDED ---
+
                 full_mix = mix_wizard_tracks(
                     affirmation_audio=affirmation_tuple,
                     background_audio=background_tuple,
@@ -390,7 +427,7 @@ class QuickWizard:
                 st.session_state.wizard_export_error = f"Mixing Failed: {e_mix}"
                 return
 
-            # --- Export to selected format ---
+            # Export to selected format
             logger.info(f"Exporting final mix as {export_format.upper()}...")
             export_buffer = None
             try:
@@ -474,11 +511,16 @@ class QuickWizard:
 
         initialize_wizard_state()  # Ensure state exists
 
-        if not hasattr(self, "tts_generator") or self.tts_generator is None:
-            st.error("TTS Engine failed to initialize. Cannot proceed.")
-            if st.button("Go Home"):
-                self._reset_wizard_state()
-            return
+        # --- MODIFIED: Check tts_generator instance directly ---
+        if not self.tts_generator:
+            # Error message is already displayed during __init__ if it failed
+            logger.error("render_wizard: TTS generator is not available. Halting render.")
+            # Optionally add a button to retry initialization or go home
+            if st.button("Try Again / Go Home"):
+                # You might want a more specific retry mechanism
+                self._reset_wizard_state()  # Simple reset for now
+            return  # Stop rendering the wizard steps
+        # --- END MODIFIED ---
 
         step = st.session_state.get("wizard_step", 1)
         steps_display = ["Affirmations", "Background", "Frequency", "Mix & Export"]

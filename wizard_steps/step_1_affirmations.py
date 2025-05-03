@@ -1,6 +1,6 @@
 # wizard_steps/step_1_affirmations.py
 # ==========================================
-# Step 1 UI for Quick Create Wizard: Affirmations
+# Step 1 UI for Quick Create Wizard: Affirmations (Volume control moved to Step 4)
 # ==========================================
 
 import logging
@@ -21,9 +21,6 @@ from config import (
 )
 from utils import read_text_file
 
-# NOTE: TTSGenerator is no longer imported directly here.
-# The wizard instance passed to render_step_1 will hold the TTS generator.
-
 logger = logging.getLogger(__name__)
 
 # Define keys for widgets in this step to ensure consistency
@@ -33,9 +30,9 @@ AFFIRM_FILE_UPLOADER_KEY = "wizard_affirm_file_uploader"
 AFFIRM_ORIGINAL_TEXT_KEY = "wizard_original_affirmation_text"
 AFFIRM_PENDING_UPDATE_KEY = "wizard_affirm_text_pending_update"
 AFFIRM_PENDING_TRUNCATED_KEY = "wizard_affirm_truncated_pending"
-# --- ADDED: Key for volume slider ---
-AFFIRM_VOLUME_SLIDER_KEY = "wizard_affirm_vol_slider"
-# --- END ADDED ---
+# --- REMOVED: Key for volume slider ---
+# AFFIRM_VOLUME_SLIDER_KEY = "wizard_affirm_vol_slider"
+# --- END REMOVED ---
 
 
 def render_step_1(wizard):  # Pass the wizard instance which has tts_generator
@@ -52,9 +49,11 @@ def render_step_1(wizard):  # Pass the wizard instance which has tts_generator
         st.session_state[AFFIRM_PENDING_TRUNCATED_KEY] = False
     if AFFIRM_TEXT_AREA_KEY not in st.session_state:
         st.session_state[AFFIRM_TEXT_AREA_KEY] = ""  # Ensure main text state exists
-    # Ensure affirmation volume state exists (handled by initialize_wizard_state, but good practice)
+    # Ensure affirmation volume state exists (handled by initialize_wizard_state)
     if "wizard_affirmation_volume" not in st.session_state:
-        st.session_state.wizard_affirmation_volume = 1.0
+        from wizard_steps.wizard_state import DEFAULT_AFFIRM_VOLUME  # Import default
+
+        st.session_state.wizard_affirmation_volume = DEFAULT_AFFIRM_VOLUME
 
     # --- Apply pending update at the start of the run ---
     if st.session_state.get(AFFIRM_PENDING_UPDATE_KEY) is not None:
@@ -113,9 +112,9 @@ def render_step_1(wizard):  # Pass the wizard instance which has tts_generator
             if new_source != "upload_audio":
                 st.session_state.wizard_affirmation_audio = None
                 st.session_state.wizard_affirmation_sr = None
-                # --- ADDED: Reset volume when switching away from audio ---
-                st.session_state.wizard_affirmation_volume = 1.0  # Reset to default
-                # --- END ADDED ---
+                # --- REMOVED: Reset volume when switching away from audio ---
+                # st.session_state.wizard_affirmation_volume = 1.0 # Reset to default
+                # --- END REMOVED ---
             st.rerun()
 
     # --- Main Input Area ---
@@ -212,9 +211,9 @@ def render_step_1(wizard):  # Pass the wizard instance which has tts_generator
                     st.error(f"❌ File '{uploaded_audio_file.name}' exceeds {MAX_UPLOAD_SIZE_MB} MB limit.")
                     st.session_state.wizard_affirmation_audio = None
                     st.session_state.wizard_affirmation_sr = None
-                    # --- ADDED: Reset volume if upload fails ---
-                    st.session_state.wizard_affirmation_volume = 1.0
-                    # --- END ADDED ---
+                    # --- REMOVED: Reset volume if upload fails ---
+                    # st.session_state.wizard_affirmation_volume = 1.0
+                    # --- END REMOVED ---
                 else:
                     with st.spinner(f"Processing '{uploaded_audio_file.name}'..."):
                         temp_file_path = None
@@ -235,16 +234,16 @@ def render_step_1(wizard):  # Pass the wizard instance which has tts_generator
                                 st.session_state[AFFIRM_ORIGINAL_TEXT_KEY] = None  # Clear backup
                                 st.session_state[AFFIRM_PENDING_UPDATE_KEY] = None
                                 st.session_state[AFFIRM_PENDING_TRUNCATED_KEY] = False
-                                # --- ADDED: Rerun to show volume slider ---
-                                st.rerun()
-                                # --- END ADDED ---
+                                # --- REMOVED: Rerun to show volume slider ---
+                                # st.rerun()
+                                # --- END REMOVED ---
                             else:
                                 st.error(f"❌ Failed to load audio from '{uploaded_audio_file.name}'.")
                                 st.session_state.wizard_affirmation_audio = None
                                 st.session_state.wizard_affirmation_sr = None
-                                # --- ADDED: Reset volume on failure ---
-                                st.session_state.wizard_affirmation_volume = 1.0
-                                # --- END ADDED ---
+                                # --- REMOVED: Reset volume on failure ---
+                                # st.session_state.wizard_affirmation_volume = 1.0
+                                # --- END REMOVED ---
                         except Exception as e:
                             logger.error(
                                 f"Error processing audio file '{uploaded_audio_file.name}': {e}",
@@ -253,9 +252,9 @@ def render_step_1(wizard):  # Pass the wizard instance which has tts_generator
                             st.error(f"Error processing audio file: {e}")
                             st.session_state.wizard_affirmation_audio = None
                             st.session_state.wizard_affirmation_sr = None
-                            # --- ADDED: Reset volume on exception ---
-                            st.session_state.wizard_affirmation_volume = 1.0
-                            # --- END ADDED ---
+                            # --- REMOVED: Reset volume on exception ---
+                            # st.session_state.wizard_affirmation_volume = 1.0
+                            # --- END REMOVED ---
                         finally:
                             if temp_file_path and os.path.exists(temp_file_path):
                                 try:
@@ -288,9 +287,9 @@ def render_step_1(wizard):  # Pass the wizard instance which has tts_generator
                             st.success(f"✅ Loaded text from: '{uploaded_text_file.name}'")
                             st.session_state.wizard_affirmation_audio = None  # Clear audio state
                             st.session_state.wizard_affirmation_sr = None
-                            # --- ADDED: Reset volume when loading text ---
-                            st.session_state.wizard_affirmation_volume = 1.0
-                            # --- END ADDED ---
+                            # --- REMOVED: Reset volume when loading text ---
+                            # st.session_state.wizard_affirmation_volume = 1.0
+                            # --- END REMOVED ---
                             st.session_state[AFFIRM_ORIGINAL_TEXT_KEY] = None
                             st.session_state.wizard_affirmation_source = "text"  # Switch back to text view
                             st.rerun()
@@ -305,29 +304,18 @@ def render_step_1(wizard):  # Pass the wizard instance which has tts_generator
                     st.error(f"Failed to read text file: {e}")
                     st.session_state[AFFIRM_TEXT_AREA_KEY] = ""
 
-    # --- ADDED: Affirmation Volume Slider (Show only when audio is loaded) ---
-    if st.session_state.get("wizard_affirmation_audio") is not None:
-        st.divider()  # Add visual separation
-        st.markdown("**Adjust Affirmation Volume:**")
-        current_affirm_volume = st.session_state.get("wizard_affirmation_volume", 1.0)
-        new_affirm_volume = st.slider(
-            "Affirmation Volume",
-            min_value=0.0,
-            max_value=1.0,
-            value=current_affirm_volume,
-            step=0.05,
-            key=AFFIRM_VOLUME_SLIDER_KEY,
-            label_visibility="collapsed",  # Hide label as we have markdown title
-            help="Adjust the volume of the affirmation track. This overrides the default volume if 'Apply Quick Settings' is checked in Step 4.",
-        )
-        # Update state if the slider value changes
-        if new_affirm_volume != current_affirm_volume:
-            st.session_state.wizard_affirmation_volume = new_affirm_volume
-            logger.debug(f"Affirmation volume updated to: {new_affirm_volume}")
-            # No rerun needed, just update state for next step processing
-    # --- END ADDED ---
+    # --- REMOVED: Affirmation Volume Slider ---
+    # if st.session_state.get("wizard_affirmation_audio") is not None:
+    #     st.divider()
+    #     st.markdown("**Adjust Affirmation Volume:**")
+    #     current_affirm_volume = st.session_state.get("wizard_affirmation_volume", 1.0)
+    #     new_affirm_volume = st.slider(...)
+    #     if new_affirm_volume != current_affirm_volume:
+    #         st.session_state.wizard_affirmation_volume = new_affirm_volume
+    #         logger.debug(f"Affirmation volume updated to: {new_affirm_volume}")
+    # --- END REMOVED ---
 
-    st.divider()  # Existing divider before navigation
+    st.divider()
 
     # --- Navigation ---
     col_nav_1, col_nav_2, col_nav_3 = st.columns([1, 2, 2])
@@ -379,10 +367,9 @@ def render_step_1(wizard):  # Pass the wizard instance which has tts_generator
                                 st.session_state[AFFIRM_ORIGINAL_TEXT_KEY] = None
                                 st.session_state[AFFIRM_PENDING_UPDATE_KEY] = None
                                 st.session_state[AFFIRM_PENDING_TRUNCATED_KEY] = False
-                                # --- ADDED: Rerun after TTS to show slider before navigating ---
-                                st.rerun()  # Show slider, then user clicks next again
-                                # wizard._go_to_step(2) # Original: Navigate immediately
-                                # --- END ADDED ---
+                                # --- MODIFIED: Navigate directly, no slider to show ---
+                                wizard._go_to_step(2)  # Reruns
+                                # --- END MODIFIED ---
                             else:
                                 logger.error("TTS generation returned None or empty data without raising an exception.")
                                 st.error("Audio generation failed. Please check logs or try again.")

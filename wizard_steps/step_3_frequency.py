@@ -1,21 +1,23 @@
 # wizard_steps/step_3_frequency.py
 # ==========================================
-# UI Rendering for Wizard Step 3: Frequency/Tone
+# UI Rendering for Wizard Step 3: Frequency/Tone (Volume control moved to Step 4)
 # ==========================================
 
 import logging
 
 # Import TYPE_CHECKING if AudioData type hint is needed without circular import
-from typing import Optional  # For type hinting
-from typing import TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+    Optional,  # For type hinting
+)
 
 import numpy as np  # Import NumPy
 import streamlit as st
 
 # Import necessary components
-from audio_utils.audio_generators import generate_isochronic_tones  # If needed later
 from audio_utils.audio_generators import (
     generate_binaural_beats,
+    generate_isochronic_tones,  # If needed later
     generate_solfeggio_frequency,
 )
 from config import GLOBAL_SR
@@ -25,33 +27,39 @@ if TYPE_CHECKING:
     from audio_utils.audio_state_definitions import AudioData
 
 # Define presets locally or import from a shared config/wizard_config
+# --- REMOVED: Default volume ('vol') from presets, as it's now controlled in Step 4 ---
 WIZARD_FREQ_PRESETS = {
     "None": None,  # Option to skip
     "Focus (Alpha 10Hz Binaural)": {
         "type": "binaural",
         "f_left": 200.0,
         "f_right": 210.0,
-        "vol": 0.2,
+        # "vol": 0.2, # Removed
     },
     "Relaxation (Theta 5Hz Binaural)": {
         "type": "binaural",
         "f_left": 150.0,
         "f_right": 155.0,
-        "vol": 0.2,
+        # "vol": 0.2, # Removed
     },
     "Deep Sleep (Delta 2Hz Binaural)": {
         "type": "binaural",
         "f_left": 100.0,
         "f_right": 102.0,
-        "vol": 0.2,
+        # "vol": 0.2, # Removed
     },
     "Love Frequency (Solfeggio 528Hz)": {
         "type": "solfeggio",
         "freq": 528.0,
-        "vol": 0.2,
+        # "vol": 0.2, # Removed
     },
-    "Miracle Tone (Solfeggio 417Hz)": {"type": "solfeggio", "freq": 417.0, "vol": 0.2},
+    "Miracle Tone (Solfeggio 417Hz)": {
+        "type": "solfeggio",
+        "freq": 417.0,
+        # "vol": 0.2 # Removed
+    },
 }
+# --- END REMOVED ---
 WIZARD_FREQ_PRESET_NAMES = list(WIZARD_FREQ_PRESETS.keys())
 WIZARD_FREQ_PREVIEW_DURATION_S = 10  # Generate only 10 seconds for preview/step
 
@@ -70,7 +78,8 @@ def _process_frequency_choice(wizard):
     if preset_name != "None" and not audio_loaded:
         preset_data = WIZARD_FREQ_PRESETS.get(preset_name)
         if preset_data:
-            volume = st.session_state.wizard_frequency_volume  # Use current volume
+            # --- REMOVED: Volume parameter from generation, use default (1.0) for preview ---
+            # volume = st.session_state.wizard_frequency_volume
             logger.info(f"Generating frequency '{preset_name}' before proceeding.")
             with st.spinner(f"Generating {preset_name}..."):
                 audio: Optional["AudioData"] = None
@@ -81,32 +90,29 @@ def _process_frequency_choice(wizard):
                             preset_data["f_left"],
                             preset_data["f_right"],
                             GLOBAL_SR,
-                            volume,
+                            1.0,  # Use default volume 1.0
                         )
                     elif preset_data["type"] == "solfeggio":
                         audio = generate_solfeggio_frequency(
                             WIZARD_FREQ_PREVIEW_DURATION_S,
                             preset_data["freq"],
                             GLOBAL_SR,
-                            volume,
+                            1.0,  # Use default volume 1.0
                         )
                     # Add other types if needed
+                    # --- END REMOVED ---
 
                     if audio is not None:
                         st.session_state.wizard_frequency_audio = audio
                         st.session_state.wizard_frequency_sr = GLOBAL_SR
                     else:
                         st.error(f"Failed to generate {preset_name}.")
-                        logger.error(
-                            f"Failed to generate frequency {preset_name} before Step 4."
-                        )
+                        logger.error(f"Failed to generate frequency {preset_name} before Step 4.")
                 except Exception as e:
                     logger.error(f"Error generating frequency {preset_name}: {e}")
                     st.error(f"Failed to generate {preset_name}: {e}")
         else:
-            logger.warning(
-                f"Preset data not found for '{preset_name}' during processing."
-            )
+            logger.warning(f"Preset data not found for '{preset_name}' during processing.")
     elif preset_name == "None":
         # Ensure audio state is cleared if 'None' is chosen
         if audio_loaded:
@@ -123,13 +129,11 @@ def render_step_3(wizard):
         wizard: The instance of the main QuickWizard class.
     """
     st.subheader("Step 3: Add Frequency/Tone (Optional)")
-    st.write("Add a background frequency like Binaural Beats or Solfeggio Tones.")
+    st.write("Add a background frequency like Binaural Beats or Solfeggio Tones. Volume will be set in Step 4.")  # Added info
 
     # Get current preset index
     try:
-        current_preset_index = WIZARD_FREQ_PRESET_NAMES.index(
-            st.session_state.wizard_frequency_choice
-        )
+        current_preset_index = WIZARD_FREQ_PRESET_NAMES.index(st.session_state.wizard_frequency_choice)
     except ValueError:
         current_preset_index = 0  # Default to "None"
 
@@ -145,19 +149,16 @@ def render_step_3(wizard):
         st.session_state.wizard_frequency_choice = preset_name
         st.session_state.wizard_frequency_audio = None
         st.session_state.wizard_frequency_sr = None
-        # Reset volume to preset default when changing *to* a non-"None" preset
-        if preset_name != "None":
-            preset_data = WIZARD_FREQ_PRESETS.get(preset_name)  # Use get safely
-            if preset_data:
-                st.session_state.wizard_frequency_volume = preset_data.get(
-                    "vol", 0.2
-                )  # Use get with default
-            else:
-                st.session_state.wizard_frequency_volume = 0.2  # Fallback default
-        else:
-            # Optionally reset volume if switching back to None, or keep last setting
-            # st.session_state.wizard_frequency_volume = 0.2 # Reset to default
-            pass
+        # --- REMOVED: Logic to reset volume based on preset ---
+        # if preset_name != "None":
+        #     preset_data = WIZARD_FREQ_PRESETS.get(preset_name)
+        #     if preset_data:
+        #         st.session_state.wizard_frequency_volume = preset_data.get("vol", 0.2)
+        #     else:
+        #         st.session_state.wizard_frequency_volume = 0.2
+        # else:
+        #     pass
+        # --- END REMOVED ---
         st.rerun()  # Rerun to update UI and generate audio if needed
 
     # --- Logic for Selected Preset ---
@@ -167,33 +168,24 @@ def render_step_3(wizard):
             st.error(f"Configuration error: Preset data for '{preset_name}' not found.")
             return  # Stop rendering if preset data is missing
 
-        # Volume Slider - use the value from session state
-        current_volume = st.session_state.wizard_frequency_volume
-        new_volume = st.slider(
-            "Frequency Volume", 0.0, 1.0, current_volume, 0.05, key="wizard_freq_vol"
-        )
+        # --- REMOVED: Volume Slider ---
+        # current_volume = st.session_state.wizard_frequency_volume
+        # new_volume = st.slider(...)
+        # if not np.isclose(new_volume, current_volume):
+        #     st.session_state.wizard_frequency_volume = new_volume
+        #     st.session_state.wizard_frequency_audio = None
+        #     st.session_state.wizard_frequency_sr = None
+        #     st.rerun()
+        # --- END REMOVED ---
 
-        # Update state and regenerate audio if volume changed
-        if not np.isclose(
-            new_volume, current_volume
-        ):  # Use isclose for float comparison
-            st.session_state.wizard_frequency_volume = new_volume
-            st.session_state.wizard_frequency_audio = None  # Force regeneration
-            st.session_state.wizard_frequency_sr = None
-            st.rerun()
-
-        # Generate audio if not already generated for this preset/volume
+        # Generate audio if not already generated for this preset
         if st.session_state.get("wizard_frequency_audio") is None:
-            st.info(
-                f"Generating a {WIZARD_FREQ_PREVIEW_DURATION_S}-second sample of {preset_name}. This will be looped during final export."
-            )
+            st.info(f"Generating a {WIZARD_FREQ_PREVIEW_DURATION_S}-second sample of {preset_name}. This will be looped during final export.")
             with st.spinner(f"Generating {preset_name}..."):
                 audio: Optional["AudioData"] = None
                 duration = WIZARD_FREQ_PREVIEW_DURATION_S
-                volume = (
-                    st.session_state.wizard_frequency_volume
-                )  # Use current volume from state
-
+                # --- REMOVED: Volume from generation call ---
+                # volume = st.session_state.wizard_frequency_volume
                 try:
                     if preset_data["type"] == "binaural":
                         audio = generate_binaural_beats(
@@ -201,21 +193,21 @@ def render_step_3(wizard):
                             preset_data["f_left"],
                             preset_data["f_right"],
                             GLOBAL_SR,
-                            volume,
+                            1.0,  # Use default volume 1.0
                         )
                     elif preset_data["type"] == "solfeggio":
                         audio = generate_solfeggio_frequency(
-                            duration, preset_data["freq"], GLOBAL_SR, volume
+                            duration,
+                            preset_data["freq"],
+                            GLOBAL_SR,
+                            1.0,  # Use default volume 1.0
                         )
                     # Add isochronic if presets exist for it
+                    # --- END REMOVED ---
 
                     if audio is not None:
                         st.session_state.wizard_frequency_audio = audio
                         st.session_state.wizard_frequency_sr = GLOBAL_SR
-                        # Optional preview: Show a small snippet
-                        # preview_snippet = audio[:int(5 * GLOBAL_SR)] # 5 second preview
-                        # preview_buffer = save_audio_to_bytesio(preview_snippet, GLOBAL_SR)
-                        # if preview_buffer: st.audio(preview_buffer, format="audio/wav")
                         st.rerun()  # Rerun now that audio exists
                     else:
                         st.error(f"Failed to generate {preset_name}.")
@@ -247,9 +239,7 @@ def render_step_3(wizard):
             # st.rerun() is handled by reset_wizard_state indirectly
 
     with col_nav_2:
-        if st.button(
-            "⬅️ Back: Background", key="wizard_step3_back", use_container_width=True
-        ):
+        if st.button("⬅️ Back: Background", key="wizard_step3_back", use_container_width=True):
             wizard._go_to_step(2)
 
     with col_nav_3:

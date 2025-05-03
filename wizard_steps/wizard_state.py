@@ -18,6 +18,9 @@ DEFAULT_NOISE_TYPE = "White Noise"
 DEFAULT_FILENAME = "my_quick_subliminal"
 DEFAULT_EXPORT_FORMAT = "WAV"
 DEFAULT_APPLY_QUICK_SETTINGS = True
+# --- ADDED: Default affirmation volume ---
+DEFAULT_AFFIRM_VOLUME = 1.0
+# --- END ADDED ---
 
 
 def initialize_wizard_state():
@@ -28,6 +31,9 @@ def initialize_wizard_state():
         "wizard_affirmation_audio": None,
         "wizard_affirmation_sr": None,
         "wizard_affirmation_source": None,
+        # --- ADDED: Affirmation volume state ---
+        "wizard_affirmation_volume": DEFAULT_AFFIRM_VOLUME,
+        # --- END ADDED ---
         "wizard_background_choice": "none",
         "wizard_background_choice_label": "None (Skip)",
         "wizard_background_audio": None,
@@ -46,9 +52,7 @@ def initialize_wizard_state():
         "wizard_original_affirmation_text": None,
         "wizard_affirm_text_pending_update": None,
         "wizard_affirm_truncated_pending": False,
-        # --- ADDED: State variable to track processing ---
         "wizard_processing_active": False,
-        # --- END ADDED ---
     }
     for key, default_value in state_defaults.items():
         if key not in st.session_state:

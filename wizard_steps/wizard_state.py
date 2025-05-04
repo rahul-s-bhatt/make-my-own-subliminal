@@ -10,49 +10,7 @@ import logging
 import streamlit as st
 
 # Import constants from the central config file
-from .quick_wizard_config import (  # Step 1; Step 2; Step 3; Legacy Keys; Step 4; General
-    AFFIRM_APPLY_SPEED_KEY,
-    AFFIRMATION_SOURCE_KEY,
-    AFFIRMATION_TEXT_KEY,
-    AFFIRMATION_VOLUME_KEY,
-    BG_CHOICE_KEY,
-    BG_CHOICE_LABEL_KEY,
-    BG_NOISE_TYPE_KEY,
-    BG_UPLOADED_FILE_KEY,
-    BG_VOLUME_KEY,
-    DEFAULT_AFFIRMATION_SOURCE,
-    DEFAULT_AFFIRMATION_TEXT,
-    DEFAULT_AFFIRMATION_VOLUME,
-    DEFAULT_APPLY_SPEED,
-    DEFAULT_BG_CHOICE,
-    DEFAULT_BG_CHOICE_LABEL,
-    DEFAULT_BG_UPLOADED_FILE,
-    DEFAULT_BG_VOLUME,
-    DEFAULT_EXPORT_FORMAT,
-    DEFAULT_FREQ_CHOICE,
-    DEFAULT_FREQ_PARAMS,
-    DEFAULT_FREQ_VOLUME,
-    DEFAULT_NOISE_TYPE,
-    DEFAULT_OUTPUT_FILENAME,
-    DEFAULT_STEP,
-    EXPORT_BUFFER_KEY,
-    EXPORT_ERROR_KEY,
-    EXPORT_FORMAT_KEY,
-    FREQ_CHOICE_KEY,
-    FREQ_PARAMS_KEY,
-    FREQ_VOLUME_KEY,
-    LEGACY_AFFIRM_AUDIO_KEY,
-    LEGACY_AFFIRM_SR_KEY,
-    LEGACY_BG_AUDIO_KEY,
-    LEGACY_BG_SR_KEY,
-    LEGACY_FREQ_AUDIO_KEY,
-    LEGACY_FREQ_SR_KEY,
-    OUTPUT_FILENAME_KEY,
-    PREVIEW_BUFFER_KEY,
-    PREVIEW_ERROR_KEY,
-    WIZARD_PROCESSING_ACTIVE_KEY,
-    WIZARD_STEP_KEY,
-)
+from .quick_wizard_config import *  # Import all constants
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +22,8 @@ def initialize_wizard_state():
     # Use constants for keys and defaults
     state_defaults = {
         WIZARD_STEP_KEY: DEFAULT_STEP,
+        WIZARD_PROCESSING_ACTIVE_KEY: DEFAULT_PROCESSING_ACTIVE,  # For export
+        WIZARD_PREVIEW_ACTIVE_KEY: DEFAULT_PREVIEW_ACTIVE,  # For preview <--- NEW
         AFFIRMATION_TEXT_KEY: DEFAULT_AFFIRMATION_TEXT,
         AFFIRMATION_SOURCE_KEY: DEFAULT_AFFIRMATION_SOURCE,
         AFFIRM_APPLY_SPEED_KEY: DEFAULT_APPLY_SPEED,
@@ -82,7 +42,6 @@ def initialize_wizard_state():
         EXPORT_ERROR_KEY: None,
         PREVIEW_BUFFER_KEY: None,
         PREVIEW_ERROR_KEY: None,
-        WIZARD_PROCESSING_ACTIVE_KEY: False,
         # Legacy keys initialized to None for potential checks/cleanup
         LEGACY_AFFIRM_AUDIO_KEY: None,
         LEGACY_AFFIRM_SR_KEY: None,
@@ -109,6 +68,8 @@ def reset_wizard_state():
     # Define all keys managed by this wizard using constants
     keys_to_clear = [
         WIZARD_STEP_KEY,
+        WIZARD_PROCESSING_ACTIVE_KEY,  # Export processing flag
+        WIZARD_PREVIEW_ACTIVE_KEY,  # Preview processing flag <--- NEW
         AFFIRMATION_TEXT_KEY,
         AFFIRMATION_SOURCE_KEY,
         AFFIRM_APPLY_SPEED_KEY,
@@ -127,7 +88,6 @@ def reset_wizard_state():
         EXPORT_ERROR_KEY,
         PREVIEW_BUFFER_KEY,
         PREVIEW_ERROR_KEY,
-        WIZARD_PROCESSING_ACTIVE_KEY,
         # Include legacy keys if they might exist from previous versions
         LEGACY_AFFIRM_AUDIO_KEY,
         LEGACY_AFFIRM_SR_KEY,
@@ -143,22 +103,21 @@ def reset_wizard_state():
     popped_count = 0
     for key in keys_to_clear:
         if key in st.session_state:
-            del st.session_state[key]
+            # Use pop with default None to avoid KeyError if key somehow missing
+            st.session_state.pop(key, None)
             popped_count += 1
 
-    # Clear any other keys starting with 'wizard_' just in case
-    other_wizard_keys = [
-        k
-        for k in st.session_state
-        if k.startswith("wizard_") and k not in keys_to_clear
-    ]
-    for key in other_wizard_keys:
-        del st.session_state[key]
-        popped_count += 1
+    # Clear any other keys starting with 'wizard_' just in case (optional)
+    # other_wizard_keys = [
+    #     k for k in st.session_state if k.startswith("wizard_") and k not in keys_to_clear
+    # ]
+    # for key in other_wizard_keys:
+    #     st.session_state.pop(key, None)
+    #     popped_count += 1
 
     # Clear workflow selection if it exists
     if "selected_workflow" in st.session_state:
-        del st.session_state["selected_workflow"]
+        st.session_state.pop("selected_workflow", None)
         popped_count += 1
 
     if popped_count > 0:

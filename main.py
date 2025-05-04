@@ -66,7 +66,7 @@ if GA_MEASUREMENT_ID and GA_MEASUREMENT_ID != "YOUR_GA_MEASUREMENT_ID_HERE":
         window.parent.document.head.appendChild(gaScript);
         </script>
     """
-    components.html(google_analytics_code, height=0)
+    # components.html(google_analytics_code, height=0)
     google_analytics_code = f"""
         <script async src="https://www.googletagmanager.com/gtag/js?id={GA_MEASUREMENT_ID}"></script>
         <script>
@@ -76,6 +76,7 @@ if GA_MEASUREMENT_ID and GA_MEASUREMENT_ID != "YOUR_GA_MEASUREMENT_ID_HERE":
         gtag('config', '{GA_MEASUREMENT_ID}');
         </script>
     """
+    components.html(google_analytics_code, height=0)
     st.markdown(google_analytics_code, unsafe_allow_html=True)
     logger.info(f"Injected Google Analytics tag.")
 else:

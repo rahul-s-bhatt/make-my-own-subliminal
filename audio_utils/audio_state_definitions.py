@@ -4,7 +4,7 @@
 # ==========================================
 
 from typing import Optional  # Use Union for SourceInfo
-from typing import Any, Dict, List, Tuple, TypedDict, Union
+from typing import TypedDict, Union
 
 import numpy as np
 

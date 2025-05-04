@@ -9,22 +9,18 @@ import tempfile  # Still needed for cleanup in delete_track
 import uuid
 
 # --- MODIFIED: Added 'cast' to the import ---
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Dict, List, Optional, cast
 
 # --- END MODIFIED ---
 import numpy as np
 import streamlit as st
 
 # Import definitions from the new definitions file
-from audio_utils.audio_state_definitions import (
-    SampleRate,
-)  # Added SampleRate for type hints if needed elsewhere
-from audio_utils.audio_state_definitions import (
-    SourceInfoUpload,
-)  # Needed for cast check
-from audio_utils.audio_state_definitions import (
+from audio_utils.audio_state_definitions import (  # Added SampleRate for type hints if needed elsewhere; Needed for cast check
     AudioData,
+    SampleRate,
     SourceInfo,
+    SourceInfoUpload,
     TrackDataDict,
     TrackID,
 )
@@ -76,7 +72,6 @@ class AppState:
         # This function can be complex and depends on previous state structures.
         # Implement as needed for state migrations or validation.
         logger.debug("Validation/cleanup skipped in this version.")
-        pass
 
     def _get_tracks_dict(self) -> Dict[TrackID, TrackDataDict]:
         """Safely retrieves the tracks dictionary from session state."""

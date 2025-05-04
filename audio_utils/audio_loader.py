@@ -83,7 +83,7 @@ def load_or_regenerate_audio(
         if source_type == "upload":
             upload_info = cast("SourceInfoUpload", source_info)
             temp_file_path = upload_info.get("temp_file_path")
-            original_filename = upload_info.get("original_filename", "Unknown File")
+            upload_info.get("original_filename", "Unknown File")
             if temp_file_path and os.path.exists(temp_file_path):
                 # Call the cached load_audio function
                 full_audio_tuple = load_audio(

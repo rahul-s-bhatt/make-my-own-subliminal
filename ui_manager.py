@@ -15,7 +15,6 @@ import streamlit.components.v1 as components
 from app_state import AppState
 from audio_utils.audio_io import save_audio_to_bytesio
 from audio_utils.audio_mixers import mix_tracks  # Keep this import
-from audio_utils.audio_state_definitions import AudioData
 from config import GLOBAL_SR, MIX_PREVIEW_DURATION_S, PROJECT_FILE_VERSION
 
 # Import the sub-managers

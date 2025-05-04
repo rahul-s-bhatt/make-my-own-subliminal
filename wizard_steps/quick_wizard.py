@@ -1,129 +1,229 @@
-# quick_wizard.py
+# quick_wizard.py (Refactored - Uses Config)
 # ==========================================
-# Quick Create Wizard Orchestrator for MindMorph (Cached TTS Generator Instance)
+# Quick Create Wizard Orchestrator for MindMorph
+# Imports constants and defaults from quick_wizard_config.py
 # ==========================================
 
+import gc
 import logging
-import math
+import time
 from io import BytesIO
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import streamlit as st
 
 # Import necessary components from other modules
-from audio_utils.audio_io import save_audio_to_bytesio
-from audio_utils.audio_mixers import mix_wizard_tracks
+try:
+    from audio_utils.audio_io import save_audio_to_bytesio
 
-# Import wizard state management
-from config import (
-    GLOBAL_SR,
-    QUICK_SUBLIMINAL_PRESET_SPEED,
-)
+    AUDIO_IO_AVAILABLE = True
+except ImportError:
+    AUDIO_IO_AVAILABLE = False
+    logging.warning("audio_utils.audio_io.save_audio_to_bytesio not found.")
+
+# Import wizard state management & config
+try:
+    # Main app config
+    from config import GLOBAL_SR, QUICK_SUBLIMINAL_PRESET_SPEED
+except ImportError as e:
+    logging.error(f"Failed to import from main config: {e}")
+    GLOBAL_SR = 22050
+    QUICK_SUBLIMINAL_PRESET_SPEED = 2.0
+
+# Import state initialization and reset functions from wizard_state
+try:
+    from .wizard_state import initialize_wizard_state, reset_wizard_state
+except ImportError:
+    logging.error("Failed to import state management functions from .wizard_state")
+
+    def initialize_wizard_state():
+        logging.error("Dummy initialize_wizard_state called.")
+
+    def reset_wizard_state():
+        logging.error("Dummy reset_wizard_state called.")
+
+
+# Import ALL constants from the new wizard config file
+try:
+    from .quick_wizard_config import *  # Import all constants
+
+    logging.info("Successfully imported constants from .quick_wizard_config")
+except ImportError as e:
+    logging.error(
+        f"CRITICAL: Failed to import constants from .quick_wizard_config: {e}"
+    )
+    # Define fallbacks for essential keys if import fails, otherwise app will crash
+    AFFIRM_APPLY_SPEED_KEY = "wizard_apply_speed_change"
+    AFFIRMATION_TEXT_KEY = "wizard_affirmation_text"
+    BG_CHOICE_KEY = "wizard_background_choice"
+    BG_UPLOADED_FILE_KEY = "wizard_background_uploaded_file"
+    BG_NOISE_TYPE_KEY = "wizard_background_noise_type"
+    FREQ_CHOICE_KEY = "wizard_frequency_choice"
+    FREQ_PARAMS_KEY = "wizard_frequency_params"
+    AFFIRMATION_VOLUME_KEY = "wizard_affirmation_volume"
+    BG_VOLUME_KEY = "wizard_background_volume"
+    FREQ_VOLUME_KEY = "wizard_frequency_volume"
+    EXPORT_FORMAT_KEY = "wizard_export_format"
+    EXPORT_BUFFER_KEY = "wizard_export_buffer"
+    EXPORT_ERROR_KEY = "wizard_export_error"
+    PREVIEW_BUFFER_KEY = "wizard_preview_buffer"
+    PREVIEW_ERROR_KEY = "wizard_preview_error"
+    WIZARD_PROCESSING_ACTIVE_KEY = "wizard_processing_active"
+    WIZARD_STEP_KEY = "wizard_step"
+    LEGACY_AFFIRM_AUDIO_KEY = "wizard_affirmation_audio"
+    LEGACY_AFFIRM_SR_KEY = "wizard_affirmation_sr"
+    LEGACY_BG_AUDIO_KEY = "wizard_background_audio"
+    LEGACY_BG_SR_KEY = "wizard_background_sr"
+    LEGACY_FREQ_AUDIO_KEY = "wizard_frequency_audio"
+    LEGACY_FREQ_SR_KEY = "wizard_frequency_sr"
+    # Fallback for lists/defaults might be needed too
+    NOISE_TYPES = ["White Noise", "Pink Noise", "Brown Noise"]
+
 
 # Import the Piper TTS Generator
-from tts.piper_tts import PiperTTSGenerator
+try:
+    from tts.piper_tts import PiperTTSGenerator
+except ImportError:
+    PiperTTSGenerator = None
+    logging.error("Failed to import PiperTTSGenerator.")
 
 # Import step rendering functions
-from wizard_steps import (
-    step_1_affirmations,
-    step_2_background,
-    step_3_frequency,
-    step_4_export,
-)
-from wizard_steps.wizard_state import initialize_wizard_state, reset_wizard_state
-
-# Type hint for AudioData
 try:
-    from audio_utils.audio_effects_pipeline import AudioData
-except ImportError:
+    from . import (
+        step_1_affirmations,
+        step_2_background,
+        step_3_frequency,
+        step_4_export,
+    )
+except ImportError as e:
+    logging.error(f"Failed to import step modules relatively: {e}")
+    step_1_affirmations = step_2_background = step_3_frequency = step_4_export = None
+
+
+# Import the Audio Processor
+try:
+    from .wizard_audio_processor import AudioData, AudioTuple, WizardAudioProcessor
+
+    AUDIO_PROCESSOR_AVAILABLE = True
+    logging.info("Successfully imported WizardAudioProcessor relatively.")
+except ImportError as e:
+    AUDIO_PROCESSOR_AVAILABLE = False
+    logging.error(
+        f"CRITICAL: Failed relative import of WizardAudioProcessor: {e}. Audio functions disabled."
+    )
     AudioData = np.ndarray
-    logging.warning("Could not import AudioData type hint from audio_utils.audio_effects_pipeline. Using np.ndarray fallback.")
+    AudioTuple = Optional[Tuple[AudioData, int]]  # type: ignore
 
+    class WizardAudioProcessor:  # type: ignore
+        def __init__(self):
+            logger.error("Dummy WizardAudioProcessor initialized.")
 
-# Optional MP3 export dependency check
-try:
-    from pydub import AudioSegment
+        def load_uploaded_audio(self, *args, **kwargs):
+            raise RuntimeError("WAProc not available.")
 
-    PYDUB_AVAILABLE = True
-except ImportError:
-    PYDUB_AVAILABLE = False
-    logging.warning("pydub library not found. MP3 export will be disabled.")
+        def generate_noise_audio(self, *args, **kwargs):
+            raise RuntimeError("WAProc not available.")
+
+        def generate_frequency_audio(self, *args, **kwargs):
+            raise RuntimeError("WAProc not available.")
+
+        def generate_preview_mix(self, *args, **kwargs):
+            raise RuntimeError("WAProc not available.")
+
+        def process_and_export(self, *args, **kwargs):
+            raise RuntimeError("WAProc not available.")
 
 
 logger = logging.getLogger(__name__)
 
 
-# Define the AudioTuple type hint more explicitly
-AudioTuple = Optional[Tuple[AudioData, int]]
-
-
-# --- ADDED: Caching function for the TTS Generator instance ---
+# --- Caching Functions ---
 @st.cache_resource(show_spinner="Initializing TTS Engine...")
-def get_tts_generator() -> PiperTTSGenerator:
-    """
-    Initializes and caches the PiperTTSGenerator instance.
-    This ensures the generator (and its loaded model) is created only once per session.
-    """
-    logger.info("Creating and caching PiperTTSGenerator instance.")
+def get_tts_generator() -> Optional[PiperTTSGenerator]:
+    if PiperTTSGenerator is None:
+        logging.error("Cannot init TTS: Class not imported.")
+        return None
+    logger.info("Attempting to create and cache PiperTTSGenerator instance.")
     try:
-        # PiperTTSGenerator internally uses @st.cache_resource for model loading
-        generator = PiperTTSGenerator()
-        logger.info("PiperTTSGenerator instance created successfully.")
-        return generator
+        return PiperTTSGenerator()
     except Exception as e:
-        logger.exception("CRITICAL: Failed to create PiperTTSGenerator instance.")
-        # Re-raise or handle appropriately, maybe return None and check later
-        raise RuntimeError(f"Failed to initialize TTS engine: {e}") from e
+        logger.exception("CRITICAL: Failed to create PiperTTSGenerator.")
+        return None
 
 
-# --- END ADDED ---
+@st.cache_resource(show_spinner="Initializing Audio Processor...")
+def get_audio_processor() -> Optional[WizardAudioProcessor]:
+    if not AUDIO_PROCESSOR_AVAILABLE:
+        logger.error("Cannot init Audio Processor: Class import failed.")
+        return None
+    logger.info("Attempting to create and cache WizardAudioProcessor instance.")
+    try:
+        return WizardAudioProcessor()
+    except Exception as e:
+        logger.exception("CRITICAL: Failed to create WizardAudioProcessor.")
+        return None
 
 
+# --- Main Wizard Class ---
 class QuickWizard:
     """Manages the state and UI rendering orchestration for the Quick Create Wizard."""
 
     def __init__(self):
         """Initializes the QuickWizard."""
+        self.tts_generator: Optional[PiperTTSGenerator] = None
+        self.audio_processor: Optional[WizardAudioProcessor] = None
+        initialization_error = None
         try:
-            # --- MODIFIED: Get the cached TTS generator instance ---
+            initialize_wizard_state()  # Ensure state is initialized first
             self.tts_generator = get_tts_generator()
-            logger.info("Retrieved TTS Generator instance (cached or new).")
-            # --- END MODIFIED ---
+            self.audio_processor = get_audio_processor()
+            logger.info("Retrieved TTS Generator and Audio Processor instances.")
             if self.tts_generator is None:
-                # This case might happen if get_tts_generator fails and handles the error by returning None
-                raise RuntimeError("TTS Generator instance is None after attempting retrieval.")
-
-        # --- MODIFIED: Catch potential RuntimeError from get_tts_generator ---
-        except (NameError, RuntimeError) as e:
-            logger.exception(f"CRITICAL: Failed to get or initialize TTS Generator: {e}")
-            self.tts_generator = None  # Ensure it's None on failure
-            # Display error in Streamlit UI immediately if possible
-            st.error(f"FATAL: Failed to initialize TTS engine: {e}. Wizard cannot function.")
-        # --- END MODIFIED ---
-        except Exception as e:  # Catch any other unexpected exceptions during init
-            logger.exception(f"CRITICAL: Unexpected error during QuickWizard initialization: {e}")
+                initialization_error = "TTS Generator failed."
+            if self.audio_processor is None:
+                error_msg = "Audio Processor failed."
+                initialization_error = (
+                    f"{initialization_error} {error_msg}"
+                    if initialization_error
+                    else error_msg
+                )
+            if initialization_error:
+                logger.critical(f"Init Failed: {initialization_error}")
+        except Exception as e:
+            initialization_error = f"Unexpected init error: {e}"
+            logger.exception(f"CRITICAL: {initialization_error}")
             self.tts_generator = None
-            st.error(f"FATAL: An unexpected error occurred during initialization: {e}. Wizard cannot function.")
-
-        initialize_wizard_state()
-        # Ensure preview state variables exist
-        if "wizard_preview_buffer" not in st.session_state:
-            st.session_state.wizard_preview_buffer = None
-        if "wizard_preview_error" not in st.session_state:
-            st.session_state.wizard_preview_error = None
-        logger.debug("QuickWizard initialized and state ensured.")
+            self.audio_processor = None
+        self._initialization_error = initialization_error
+        # Use constants for keys when checking state
+        if PREVIEW_BUFFER_KEY not in st.session_state:
+            st.session_state[PREVIEW_BUFFER_KEY] = None
+        if PREVIEW_ERROR_KEY not in st.session_state:
+            st.session_state[PREVIEW_ERROR_KEY] = None
+        if EXPORT_BUFFER_KEY not in st.session_state:
+            st.session_state[EXPORT_BUFFER_KEY] = None
+        if EXPORT_ERROR_KEY not in st.session_state:
+            st.session_state[EXPORT_ERROR_KEY] = None
+        if WIZARD_PROCESSING_ACTIVE_KEY not in st.session_state:
+            st.session_state[WIZARD_PROCESSING_ACTIVE_KEY] = False
+        logger.debug("QuickWizard initialization attempt finished.")
 
     # --- State Synchronization Callbacks ---
+    # Use constants for keys
     def sync_affirmation_text(self):
-        st.session_state.wizard_affirmation_text = st.session_state.get("wizard_affirm_text_area", "")
-        if st.session_state.get("wizard_affirmation_source") == "text":
-            st.session_state.wizard_affirmation_audio = None
-            st.session_state.wizard_affirmation_sr = None
+        st.session_state[AFFIRMATION_TEXT_KEY] = st.session_state.get(
+            "wizard_affirm_text_area", ""
+        )  # Widget key kept separate
+        cleared = st.session_state.pop(LEGACY_AFFIRM_AUDIO_KEY, None) is not None
+        cleared |= st.session_state.pop(LEGACY_AFFIRM_SR_KEY, None) is not None
+        if cleared:
+            logger.debug("Cleared legacy affirmation audio/sr state.")
+            gc.collect()
         logger.debug("Synced affirmation text state.")
 
     def clear_affirmation_upload_state(self):
-        pass
+        self.sync_affirmation_text()
 
     def sync_background_choice(self, choice_options: List[str]):
         selected_label = st.session_state.get("wizard_bg_choice_radio")
@@ -134,398 +234,360 @@ class QuickWizard:
             new_choice = "upload"
         elif selected_label == "Generate Noise":
             new_choice = "noise"
-
-        current_choice = st.session_state.get("wizard_background_choice")
+        current_choice = st.session_state.get(BG_CHOICE_KEY)
         if new_choice != current_choice:
-            st.session_state.wizard_background_audio = None
-            st.session_state.wizard_background_sr = None
-            logger.debug(f"Background choice changed from '{current_choice}' to '{new_choice}', cleared related audio state.")
-
-        st.session_state.wizard_background_choice = new_choice
-        st.session_state.wizard_background_choice_label = selected_label
+            logger.info(
+                f"BG choice changed: '{current_choice}'->'{new_choice}'. Updating."
+            )
+            st.session_state[BG_CHOICE_KEY] = new_choice
+            st.session_state[BG_CHOICE_LABEL_KEY] = selected_label
+            cleared = st.session_state.pop(LEGACY_BG_AUDIO_KEY, None) is not None
+            cleared |= st.session_state.pop(LEGACY_BG_SR_KEY, None) is not None
+            if cleared:
+                logger.debug("Cleared legacy background audio/sr state.")
+            if new_choice == "upload":
+                st.session_state[BG_NOISE_TYPE_KEY] = NOISE_TYPES[0]
+                logger.debug("Reset noise type.")
+            elif new_choice == "noise":
+                st.session_state.pop(BG_UPLOADED_FILE_KEY, None)
+                logger.debug("Cleared uploaded file object.")
+            else:
+                st.session_state.pop(BG_UPLOADED_FILE_KEY, None)
+                st.session_state[BG_NOISE_TYPE_KEY] = NOISE_TYPES[0]
+                logger.debug("Cleared upload & reset noise type.")
+            gc.collect()
 
     def clear_background_upload_state(self):
-        pass
+        cleared = st.session_state.pop(LEGACY_BG_AUDIO_KEY, None) is not None
+        cleared |= st.session_state.pop(LEGACY_BG_SR_KEY, None) is not None
+        cleared |= st.session_state.pop(BG_UPLOADED_FILE_KEY, None) is not None
+        if cleared:
+            logger.debug("Cleared legacy BG audio/sr/file object via callback.")
+            gc.collect()
 
     # --- Navigation and Reset ---
     def _reset_wizard_state(self):
+        # This function now calls the reset defined in wizard_state, which uses constants
+        logger.info("Resetting wizard state via wizard_state.reset_wizard_state().")
         reset_wizard_state()
-        st.rerun()
+        # No st.rerun() needed here, reset_wizard_state should handle it if necessary
 
     def _go_to_step(self, step: int):
+        # Use constant for step key
         if 1 <= step <= 4:
-            st.session_state.wizard_step = step
-            logger.debug(f"Navigating to wizard step {step}")
-            st.rerun()
+            current_step = st.session_state.get(WIZARD_STEP_KEY, 1)
+            if step != current_step:
+                st.session_state[WIZARD_STEP_KEY] = step
+                logger.debug(f"Navigating from {current_step} to {step}")
+                # Use constants for buffer/error keys
+                st.session_state.pop(PREVIEW_BUFFER_KEY, None)
+                st.session_state.pop(PREVIEW_ERROR_KEY, None)
+                st.session_state.pop(EXPORT_BUFFER_KEY, None)
+                st.session_state.pop(EXPORT_ERROR_KEY, None)
+                st.rerun()
+            else:
+                logger.debug(f"Already on step {step}.")
         else:
-            logger.warning(f"Invalid step navigation requested: {step}")
+            logger.warning(f"Invalid step navigation: {step}")
 
-    # --- Helper Function for Looping Audio ---
-    def _loop_audio_to_length(self, audio_data: AudioData, target_length: int) -> AudioData:
-        """Loops or truncates audio data to match the target length."""
-        if not isinstance(audio_data, np.ndarray):
-            logger.error(f"Invalid audio data type for looping: {type(audio_data)}")
-            raise TypeError("audio_data must be a NumPy array for looping.")
-        if target_length <= 0:
-            logger.warning("Target length for looping is zero or negative. Returning empty array.")
-            return np.array([], dtype=audio_data.dtype)
+    # --- State Gathering Helper ---
+    def _get_current_processing_state(self) -> Dict[str, Any]:
+        """Gathers relevant wizard state values needed for audio processing."""
+        # Use constants for keys and provide defaults
+        speed_state_value = st.session_state.get(
+            AFFIRM_APPLY_SPEED_KEY, DEFAULT_APPLY_SPEED
+        )
+        logger.info(
+            f"DEBUG GET_STATE - Reading {AFFIRM_APPLY_SPEED_KEY}: {speed_state_value} (Type: {type(speed_state_value)})"
+        )
 
-        current_length = audio_data.shape[0]
-        if current_length == 0:
-            logger.warning("Input audio for looping is empty. Returning empty array.")
-            return np.array([], dtype=audio_data.dtype)
+        state = {
+            # Affirmation Settings
+            "wizard_apply_speed_change": speed_state_value,
+            "wizard_speed_factor": QUICK_SUBLIMINAL_PRESET_SPEED,  # From main config
+            # Background Settings
+            "wizard_background_choice": st.session_state.get(
+                BG_CHOICE_KEY, DEFAULT_BG_CHOICE
+            ),
+            "wizard_background_uploaded_file": st.session_state.get(
+                BG_UPLOADED_FILE_KEY
+            ),  # Default is None via init
+            "wizard_background_noise_type": st.session_state.get(
+                BG_NOISE_TYPE_KEY, DEFAULT_NOISE_TYPE
+            ),
+            # Frequency Settings
+            "wizard_frequency_choice": st.session_state.get(
+                FREQ_CHOICE_KEY, DEFAULT_FREQ_CHOICE
+            ),
+            "wizard_frequency_params": st.session_state.get(
+                FREQ_PARAMS_KEY, DEFAULT_FREQ_PARAMS
+            ),
+            # Volume Settings
+            "wizard_affirmation_volume": st.session_state.get(
+                AFFIRMATION_VOLUME_KEY, DEFAULT_AFFIRMATION_VOLUME
+            ),
+            "wizard_background_volume": st.session_state.get(
+                BG_VOLUME_KEY, DEFAULT_BG_VOLUME
+            ),
+            "wizard_frequency_volume": st.session_state.get(
+                FREQ_VOLUME_KEY, DEFAULT_FREQ_VOLUME
+            ),
+            # Export Format
+            "wizard_export_format": st.session_state.get(
+                EXPORT_FORMAT_KEY, DEFAULT_EXPORT_FORMAT
+            ),
+        }
+        logger.debug("Gathered current processing state.")
+        return state
 
-        if current_length == target_length:
-            return audio_data
-        elif current_length < target_length:
-            num_repeats = math.ceil(target_length / current_length)
-            if audio_data.ndim == 1:
-                looped_audio = np.tile(audio_data, num_repeats)
-            elif audio_data.ndim == 2:
-                looped_audio = np.tile(audio_data, (num_repeats, 1))
-            else:
-                logger.error(f"Unsupported audio dimensions for looping: {audio_data.ndim}")
-                raise ValueError("Audio data must be 1D or 2D for looping.")
-            return looped_audio[:target_length]
-        else:  # current_length > target_length
-            return audio_data[:target_length]
-
-    # --- Preview Mix Generation ---
-    def _generate_preview_mix(self, duration_seconds: int) -> AudioTuple:
-        """Generates a short preview mix based on current Step 4 settings."""
-        logger.info(f"Starting preview mix generation ({duration_seconds}s).")
-        if not self.tts_generator:  # Check if generator exists
-            logger.error("Preview failed: TTS generator not available.")
-            raise RuntimeError("TTS Generator is not initialized.")
+    # --- Dynamic Generation Helpers ---
+    def _generate_affirmation_audio(self) -> Optional[AudioTuple]:
+        # Use constant key
+        affirmation_text = st.session_state.get(AFFIRMATION_TEXT_KEY, "").strip()
+        if not affirmation_text:
+            logger.warning("Affirmation text empty.")
+            return None
+        if not self.tts_generator:
+            raise RuntimeError("TTS Engine not initialized.")
+        logger.info("Generating affirmation audio dynamically...")
         try:
-            # Get Audio Data and SR
-            affirmation_audio: Optional[AudioData] = st.session_state.get("wizard_affirmation_audio")
-            affirmation_sr: Optional[int] = st.session_state.get("wizard_affirmation_sr")
-            background_audio: Optional[AudioData] = st.session_state.get("wizard_background_audio")
-            background_sr: Optional[int] = st.session_state.get("wizard_background_sr")
-            frequency_audio: Optional[AudioData] = st.session_state.get("wizard_frequency_audio")
-            frequency_sr: Optional[int] = st.session_state.get("wizard_frequency_sr")
-
-            # Get Volume & Speed Settings from Step 4 State
-            affirmation_volume: float = st.session_state.get("wizard_affirmation_volume", 1.0)
-            background_volume: float = st.session_state.get("wizard_background_volume", 0.7)
-            frequency_volume: float = st.session_state.get("wizard_frequency_volume", 0.2)
-            apply_quick_speed: bool = st.session_state.get("wizard_apply_quick_settings", True)
-            affirmation_speed: float = QUICK_SUBLIMINAL_PRESET_SPEED if apply_quick_speed else 1.0
-
-            # Validate Affirmation Audio
-            if affirmation_audio is None or affirmation_sr is None or affirmation_sr != GLOBAL_SR:
-                logger.error("Preview failed: Missing or invalid affirmation audio/SR.")
-                raise ValueError("Affirmation audio is missing or has incorrect sample rate.")
-            if not isinstance(affirmation_audio, np.ndarray) or affirmation_audio.size == 0:
-                raise ValueError("Affirmation audio data is invalid or empty.")
-
-            # Determine Preview Length
-            target_length_samples = int(duration_seconds * GLOBAL_SR)
-            affirmation_length_samples = affirmation_audio.shape[0]
-            preview_length_samples = min(target_length_samples, affirmation_length_samples)
-
-            if preview_length_samples <= 0:
-                raise ValueError("Calculated preview length is zero or negative.")
-
-            logger.info(f"Preview target length: {preview_length_samples / GLOBAL_SR:.2f}s.")
-
-            # Prepare Tracks for Preview Mixing
-            if affirmation_audio.ndim == 1:
-                affirmation_audio = np.stack([affirmation_audio] * 2, axis=-1)
-            affirmation_preview = affirmation_audio[:preview_length_samples]
-            affirmation_tuple: AudioTuple = (affirmation_preview, GLOBAL_SR)
-
-            background_tuple: AudioTuple = None
-            if background_audio is not None and background_sr == GLOBAL_SR and isinstance(background_audio, np.ndarray) and background_audio.size > 0:
-                if background_audio.ndim == 1:
-                    background_audio = np.stack([background_audio] * 2, axis=-1)
-                looped_background = self._loop_audio_to_length(background_audio, preview_length_samples)
-                background_tuple = (looped_background, GLOBAL_SR)
-                logger.debug("Background preview prepared.")
-            else:
-                logger.debug(
-                    f"Skipping background for preview. Audio exists: {background_audio is not None}, SR match: {background_sr == GLOBAL_SR}, Type valid: {isinstance(background_audio, np.ndarray)}, Size > 0: {background_audio.size > 0 if isinstance(background_audio, np.ndarray) else 'N/A'}"
-                )
-
-            frequency_tuple: AudioTuple = None
-            if frequency_audio is not None and frequency_sr == GLOBAL_SR and isinstance(frequency_audio, np.ndarray) and frequency_audio.size > 0:
-                if frequency_audio.ndim == 1:
-                    frequency_audio = np.stack([frequency_audio] * 2, axis=-1)
-                looped_frequency = self._loop_audio_to_length(frequency_audio, preview_length_samples)
-                frequency_tuple = (looped_frequency, GLOBAL_SR)
-                logger.debug("Frequency preview prepared.")
-            else:
-                logger.debug(
-                    f"Skipping frequency for preview. Audio exists: {frequency_audio is not None}, SR match: {frequency_sr == GLOBAL_SR}, Type valid: {isinstance(frequency_audio, np.ndarray)}, Size > 0: {frequency_audio.size > 0 if isinstance(frequency_audio, np.ndarray) else 'N/A'}"
-                )
-
-            # Mix Preview Tracks
-            logger.info("Mixing preview tracks...")
-            logger.info(f"Preview Mixing - Affirm Vol: {affirmation_volume:.2f}, Speed: {affirmation_speed:.2f}")
-            logger.info(f"Preview Mixing - BG Audio Present: {background_tuple is not None}, BG Vol: {background_volume:.2f}")
-            logger.info(f"Preview Mixing - Freq Audio Present: {frequency_tuple is not None}, Freq Vol: {frequency_volume:.2f}")
-
-            preview_mix = mix_wizard_tracks(
-                affirmation_audio=affirmation_tuple,
-                background_audio=background_tuple,
-                frequency_audio=frequency_tuple,
-                affirmation_speed=affirmation_speed,
-                affirmation_volume=affirmation_volume,
-                background_volume=background_volume,
-                frequency_volume=frequency_volume,
-                target_sr=GLOBAL_SR,
+            start_time = time.time()
+            audio, sr = self.tts_generator.generate(affirmation_text)
+            logger.info(
+                f"Affirmation audio generated in {time.time() - start_time:.2f}s."
             )
+            if audio.size == 0 or sr != GLOBAL_SR:
+                logger.error(f"TTS failed/wrong SR ({sr}).")
+                return None
+            return (audio, sr)
+        except Exception as e:
+            raise RuntimeError(f"Failed to generate affirmation audio: {e}") from e
 
-            if preview_mix is None or not isinstance(preview_mix, np.ndarray) or preview_mix.size == 0:
-                raise ValueError("Preview mixing resulted in empty or invalid audio data.")
-
-            logger.info(f"Preview mixing successful. Length: {len(preview_mix) / GLOBAL_SR:.2f}s.")
-            return preview_mix, GLOBAL_SR
-
-        except Exception as e_preview:
-            logger.exception("Error generating wizard preview mix.")
-            raise e_preview  # Propagate exception
-
-    # --- Core Processing Logic (Full Export) ---
-    def _process_and_export(self):
-        """Handles the final processing and export logic for the wizard."""
-        logger.info("Starting wizard export process.")
-        if not self.tts_generator:  # Check if generator exists
-            logger.error("Export failed: TTS generator not available.")
-            st.session_state.wizard_export_error = "TTS Generator is not initialized."
-            return
-
-        st.session_state.wizard_export_buffer = None
-        st.session_state.wizard_export_error = None
-        processing_success = False
-
+    def _generate_or_load_background_audio(
+        self,
+        bg_choice: str,
+        bg_noise_type: str,
+        uploaded_file: Optional[Any],
+        target_duration_hint: float,
+    ) -> Optional[AudioTuple]:
+        # Logic remains the same, relies on audio_processor methods
+        if bg_choice == "none":
+            logger.info("No background selected.")
+            return None
+        if not self.audio_processor:
+            logger.error("Audio processor unavailable for BG.")
+            return None
+        bg_tuple: Optional[AudioTuple] = None
         try:
-            # Get Audio Data and SR
-            affirmation_audio_data: Optional[AudioData] = st.session_state.get("wizard_affirmation_audio")
-            affirmation_sr: Optional[int] = st.session_state.get("wizard_affirmation_sr")
-            background_audio_data: Optional[AudioData] = st.session_state.get("wizard_background_audio")
-            background_sr: Optional[int] = st.session_state.get("wizard_background_sr")
-            frequency_audio_data: Optional[AudioData] = st.session_state.get("wizard_frequency_audio")
-            frequency_sr: Optional[int] = st.session_state.get("wizard_frequency_sr")
-
-            # Get Volume & Speed Settings from Step 4 State
-            affirmation_volume_slider: float = st.session_state.get("wizard_affirmation_volume", 1.0)
-            background_volume: float = st.session_state.get("wizard_background_volume", 0.7)
-            frequency_volume: float = st.session_state.get("wizard_frequency_volume", 0.2)
-            apply_quick_settings: bool = st.session_state.get("wizard_apply_quick_settings", True)
-            eff_affirm_speed: float = QUICK_SUBLIMINAL_PRESET_SPEED if apply_quick_settings else 1.0
-            eff_affirm_volume: float = affirmation_volume_slider
-
-            # Validate Affirmation Audio
-            if affirmation_audio_data is None or affirmation_sr is None:
-                st.session_state.wizard_export_error = "Affirmation audio is missing. Please go back to Step 1."
-                logger.error("Wizard export failed: Missing affirmation audio.")
-                return
-            if affirmation_sr != GLOBAL_SR:
-                st.session_state.wizard_export_error = f"Affirmation audio has incorrect sample rate ({affirmation_sr} Hz). Expected {GLOBAL_SR} Hz."
-                logger.error(st.session_state.wizard_export_error)
-                return
-
-            export_format: str = st.session_state.get("wizard_export_format", "WAV").lower()
-
-            # Prepare Tracks for Mixing
-            target_length_samples = 0
-            try:
-                if not isinstance(affirmation_audio_data, np.ndarray) or affirmation_audio_data.size == 0:
-                    raise ValueError("Affirmation audio data is invalid or empty.")
-
-                target_length_samples = affirmation_audio_data.shape[0]
-                if target_length_samples == 0:
-                    raise ValueError("Affirmation audio has zero length.")
-
-                logger.info(f"Target mix length: {target_length_samples / GLOBAL_SR:.2f}s based on affirmation length.")
-
-                if affirmation_audio_data.ndim == 1:
-                    affirmation_audio_data = np.stack([affirmation_audio_data] * 2, axis=-1)
-                elif affirmation_audio_data.ndim != 2:
-                    raise ValueError(f"Unsupported affirmation audio dimensions: {affirmation_audio_data.ndim}")
-
-                affirmation_tuple: AudioTuple = (affirmation_audio_data, GLOBAL_SR)
-
-                # Prepare Background Audio
-                background_tuple: AudioTuple = None
-                if background_audio_data is not None and background_sr is not None:
-                    if background_sr != GLOBAL_SR:
-                        logger.warning(f"Skipping background: SR mismatch ({background_sr} vs {GLOBAL_SR}).")
-                    elif not isinstance(background_audio_data, np.ndarray) or background_audio_data.size == 0:
-                        logger.warning("Skipping background: Audio data is invalid or empty.")
-                    else:
-                        if background_audio_data.ndim == 1:
-                            background_audio_data = np.stack([background_audio_data] * 2, axis=-1)
-                        elif background_audio_data.ndim != 2:
-                            logger.warning(f"Skipping background: Unsupported audio dimensions: {background_audio_data.ndim}.")
-                            background_audio_data = None
-
-                        if background_audio_data is not None:
-                            looped_background = self._loop_audio_to_length(background_audio_data, target_length_samples)
-                            background_tuple = (looped_background, GLOBAL_SR)
-                            logger.info(f"Background audio prepared (looped/trimmed to {target_length_samples / GLOBAL_SR:.2f}s).")
+            if bg_choice == "upload":
+                if uploaded_file:
+                    logger.info(f"Loading uploaded BG: {uploaded_file.name}")
+                    bg_tuple = self.audio_processor.load_uploaded_audio(uploaded_file)
                 else:
-                    logger.info("No background audio data provided or SR missing.")
-
-                # Prepare Frequency Audio
-                frequency_tuple: AudioTuple = None
-                if frequency_audio_data is not None and frequency_sr is not None:
-                    if frequency_sr != GLOBAL_SR:
-                        logger.warning(f"Skipping frequency: SR mismatch ({frequency_sr} vs {GLOBAL_SR}).")
-                    elif not isinstance(frequency_audio_data, np.ndarray) or frequency_audio_data.size == 0:
-                        logger.warning("Skipping frequency: Audio data is invalid or empty.")
-                    else:
-                        if frequency_audio_data.ndim == 1:
-                            frequency_audio_data = np.stack([frequency_audio_data] * 2, axis=-1)
-                        elif frequency_audio_data.ndim != 2:
-                            logger.warning(f"Skipping frequency: Unsupported audio dimensions: {frequency_audio_data.ndim}.")
-                            frequency_audio_data = None
-
-                        if frequency_audio_data is not None:
-                            looped_frequency = self._loop_audio_to_length(frequency_audio_data, target_length_samples)
-                            frequency_tuple = (looped_frequency, GLOBAL_SR)
-                            logger.info(f"Frequency audio prepared (looped/trimmed to {target_length_samples / GLOBAL_SR:.2f}s).")
-                else:
-                    logger.info("No frequency audio data provided or SR missing.")
-
-            except Exception as e_prep:
-                logger.exception("Error preparing tracks for mixing.")
-                st.session_state.wizard_export_error = f"Track Preparation Failed: {e_prep}"
-                return
-
-            # Mix Tracks
-            logger.info("Wizard mixing tracks...")
-            full_mix: Optional[AudioData] = None
-            try:
-                if "mix_wizard_tracks" not in globals() or not callable(mix_wizard_tracks):
-                    raise NameError("Mixing function 'mix_wizard_tracks' is not available.")
-
-                logger.info(f"Final Mixing - Affirm Vol: {eff_affirm_volume:.2f}, Speed: {eff_affirm_speed:.2f}")
-                logger.info(f"Final Mixing - BG Audio Present: {background_tuple is not None}, BG Vol: {background_volume:.2f}")
-                logger.info(f"Final Mixing - Freq Audio Present: {frequency_tuple is not None}, Freq Vol: {frequency_volume:.2f}")
-
-                full_mix = mix_wizard_tracks(
-                    affirmation_audio=affirmation_tuple,
-                    background_audio=background_tuple,
-                    frequency_audio=frequency_tuple,
-                    affirmation_speed=eff_affirm_speed,
-                    affirmation_volume=eff_affirm_volume,
-                    background_volume=background_volume,
-                    frequency_volume=frequency_volume,
-                    target_sr=GLOBAL_SR,
+                    logger.warning("BG choice 'upload' but no file found.")
+            elif bg_choice == "noise":
+                logger.info(f"Generating BG noise: {bg_noise_type}")
+                bg_tuple = self.audio_processor.generate_noise_audio(
+                    bg_noise_type, target_duration_hint, GLOBAL_SR
                 )
-                if full_mix is None or not isinstance(full_mix, np.ndarray) or full_mix.size == 0:
-                    raise ValueError("Mixing resulted in empty or invalid audio data.")
+            if bg_tuple and (
+                not isinstance(bg_tuple[0], np.ndarray)
+                or bg_tuple[0].size == 0
+                or bg_tuple[1] != GLOBAL_SR
+            ):
+                logger.error(f"Dynamic BG processing invalid result for '{bg_choice}'.")
+                bg_tuple = None
+            elif bg_tuple:
+                logger.info(f"BG audio '{bg_choice}' processed successfully.")
+        except Exception as e:
+            logger.exception(f"Error processing dynamic BG ({bg_choice}).")
+            bg_tuple = None
+        return bg_tuple
 
-                mix_duration_s = len(full_mix) / GLOBAL_SR if GLOBAL_SR > 0 else 0
-                logger.info(f"Mixing successful. Final length: {mix_duration_s:.2f}s.")
+    def _generate_frequency_audio(
+        self, freq_choice: str, freq_params: Dict[str, Any], target_duration_hint: float
+    ) -> Optional[AudioTuple]:
+        # Logic remains the same, relies on audio_processor method
+        if freq_choice == "None":
+            logger.info("No frequency selected.")
+            return None
+        if not self.audio_processor:
+            logger.error("Audio processor unavailable for Freq.")
+            return None
+        freq_tuple: Optional[AudioTuple] = None
+        try:
+            logger.info(
+                f"Generating frequency audio: {freq_choice} with params: {freq_params}"
+            )
+            freq_tuple = self.audio_processor.generate_frequency_audio(
+                freq_choice, freq_params, target_duration_hint, GLOBAL_SR
+            )
+            if freq_tuple and (
+                not isinstance(freq_tuple[0], np.ndarray)
+                or freq_tuple[0].size == 0
+                or freq_tuple[1] != GLOBAL_SR
+            ):
+                logger.error(
+                    f"Dynamic Freq processing invalid result for '{freq_choice}'."
+                )
+                freq_tuple = None
+            elif freq_tuple:
+                logger.info(f"Freq audio '{freq_choice}' processed successfully.")
+        except Exception as e:
+            logger.exception(f"Error processing dynamic Freq ({freq_choice}).")
+            freq_tuple = None
+        return freq_tuple
 
-            except Exception as e_mix:
-                logger.exception("Error during wizard track mixing.")
-                st.session_state.wizard_export_error = f"Mixing Failed: {e_mix}"
+    # --- Wrappers for Audio Processing ---
+    def generate_preview(self, duration_seconds: int = 10):
+        logger.info(
+            f"QuickWizard: Requesting preview generation ({duration_seconds}s)."
+        )
+        # Use constants for keys
+        st.session_state.pop(PREVIEW_BUFFER_KEY, None)
+        st.session_state.pop(PREVIEW_ERROR_KEY, None)
+        if not self.audio_processor or not self.tts_generator or not AUDIO_IO_AVAILABLE:
+            st.session_state[PREVIEW_ERROR_KEY] = "Required components not available."
+            logger.error(f"Preview failed: Missing components.")
+            return
+        affirmation_tuple: Optional[AudioTuple] = None
+        background_tuple: Optional[AudioTuple] = None
+        frequency_tuple: Optional[AudioTuple] = None
+        preview_buffer: Optional[BytesIO] = None
+        try:
+            affirmation_tuple = self._generate_affirmation_audio()
+            if affirmation_tuple is None:
+                st.session_state[PREVIEW_ERROR_KEY] = (
+                    "Failed to generate affirmation audio."
+                )
                 return
-
-            # Export to selected format
-            logger.info(f"Exporting final mix as {export_format.upper()}...")
-            export_buffer = None
-            try:
-                if "save_audio_to_bytesio" not in globals() or not callable(save_audio_to_bytesio):
-                    raise NameError("Saving function 'save_audio_to_bytesio' is not available.")
-
-                if export_format == "wav":
-                    export_buffer = save_audio_to_bytesio(full_mix, GLOBAL_SR)
-                    if export_buffer and export_buffer.getbuffer().nbytes > 0:
-                        logger.info("Wizard WAV mix buffer generated successfully.")
-                        processing_success = True
-                    else:
-                        logger.error("save_audio_to_bytesio returned empty buffer for WAV.")
-                        st.session_state.wizard_export_error = "Failed to save WAV buffer (empty)."
-
-                elif export_format == "mp3":
-                    if not PYDUB_AVAILABLE:
-                        st.session_state.wizard_export_error = "MP3 export requires 'pydub' and 'ffmpeg'."
-                        logger.error("MP3 export requested but pydub is not available.")
-                    else:
-                        logger.info("Converting full mix to MP3 using pydub...")
-                        full_mix_clipped = np.clip(full_mix, -1.0, 1.0)
-                        audio_int16 = (full_mix_clipped * 32767).astype(np.int16)
-
-                        channels = audio_int16.shape[1] if audio_int16.ndim == 2 else 1
-                        if channels != 2:
-                            logger.warning(f"Mix has {channels} channels before MP3 export. Ensuring stereo.")
-                            if audio_int16.ndim == 1:
-                                audio_int16 = np.stack([audio_int16] * 2, axis=-1)
-                            elif audio_int16.shape[1] == 1:
-                                audio_int16 = np.concatenate([audio_int16, audio_int16], axis=1)
-                            channels = 2
-
-                        segment = AudioSegment(
-                            data=audio_int16.tobytes(),
-                            sample_width=audio_int16.dtype.itemsize,
-                            frame_rate=GLOBAL_SR,
-                            channels=channels,
-                        )
-                        mp3_buffer = BytesIO()
-                        segment.export(mp3_buffer, format="mp3", bitrate="192k")
-                        mp3_buffer.seek(0)
-
-                        if mp3_buffer.getbuffer().nbytes > 0:
-                            logger.info("Wizard MP3 mix buffer generated successfully.")
-                            export_buffer = mp3_buffer
-                            processing_success = True
-                        else:
-                            logger.error("MP3 export resulted in empty buffer.")
-                            st.session_state.wizard_export_error = "MP3 export failed (empty buffer)."
+            affirmation_duration = (
+                affirmation_tuple[0].shape[0] / GLOBAL_SR if affirmation_tuple else 0
+            )
+            processing_state = (
+                self._get_current_processing_state()
+            )  # Gets state using constants
+            background_tuple = self._generate_or_load_background_audio(
+                processing_state["wizard_background_choice"],
+                processing_state["wizard_background_noise_type"],
+                processing_state["wizard_background_uploaded_file"],
+                affirmation_duration,
+            )
+            frequency_tuple = self._generate_frequency_audio(
+                processing_state["wizard_frequency_choice"],
+                processing_state["wizard_frequency_params"],
+                affirmation_duration,
+            )
+            logger.info("Calling audio processor for preview mix...")
+            preview_audio, preview_sr = self.audio_processor.generate_preview_mix(
+                duration_seconds,
+                affirmation_tuple,
+                background_tuple,
+                frequency_tuple,
+                processing_state,
+            )
+            if preview_audio is not None and preview_sr is not None:
+                preview_buffer = save_audio_to_bytesio(preview_audio, preview_sr)
+                if preview_buffer and preview_buffer.getbuffer().nbytes > 0:
+                    st.session_state[PREVIEW_BUFFER_KEY] = preview_buffer
+                    logger.info("Preview generated.")
                 else:
-                    st.session_state.wizard_export_error = f"Unsupported export format requested: '{export_format}'."
-                    logger.error(f"Unsupported export format: {export_format}")
-
-            except NameError as e_func:
-                logger.exception(f"A required function ({e_func}) was not found.")
-                st.session_state.wizard_export_error = f"Processing function error: {e_func}. Check application setup."
-            except Exception as e_export:
-                logger.exception(f"Error during wizard audio export ({export_format}).")
-                st.session_state.wizard_export_error = f"Export Failed ({export_format.upper()}): {e_export}"
-
-            if processing_success and export_buffer:
-                st.session_state.wizard_export_buffer = export_buffer
-            elif not st.session_state.get("wizard_export_error"):
-                st.session_state.wizard_export_error = "Export process completed but no valid output buffer was generated."
-                logger.error("Export finished without errors but buffer is missing.")
-
-        except Exception as e_main:
-            logger.exception("Unhandled error during wizard export process.")
-            st.session_state.wizard_export_error = f"An unexpected error occurred: {e_main}"
-
+                    st.session_state[PREVIEW_ERROR_KEY] = (
+                        "Preview failed (empty buffer)."
+                    )
+                    st.session_state.pop(PREVIEW_BUFFER_KEY, None)
+            else:
+                st.session_state[PREVIEW_ERROR_KEY] = (
+                    "Preview failed (processor returned None)."
+                )
+        except Exception as e:
+            logger.exception("Error during preview wrapper.")
+            st.session_state[PREVIEW_ERROR_KEY] = f"Preview Error: {e}"
+            st.session_state.pop(PREVIEW_BUFFER_KEY, None)
         finally:
-            st.session_state.wizard_processing_active = False
-            logger.info("Reset wizard_processing_active flag to False.")
-            # No st.rerun() here; step_4_export handles rerunning
+            del affirmation_tuple, background_tuple, frequency_tuple
+            if (
+                "preview_buffer" in locals()
+                and preview_buffer is not None
+                and id(preview_buffer) != id(st.session_state.get(PREVIEW_BUFFER_KEY))
+            ):
+                del preview_buffer
+            gc.collect()
+            logger.debug("Cleaned up temp audio tuples for preview.")
+
+    def process_and_export_audio(self):
+        logger.info("QuickWizard: Requesting final processing and export.")
+        # Use constants for keys
+        st.session_state.pop(EXPORT_BUFFER_KEY, None)
+        st.session_state.pop(EXPORT_ERROR_KEY, None)
+        st.session_state[WIZARD_PROCESSING_ACTIVE_KEY] = True
+        if not self.audio_processor or not self.tts_generator:
+            st.session_state[EXPORT_ERROR_KEY] = "Required components not available."
+            logger.error(f"Export failed: Missing components.")
+            st.session_state[WIZARD_PROCESSING_ACTIVE_KEY] = False
+            return
+        affirmation_tuple: Optional[AudioTuple] = None
+        background_tuple: Optional[AudioTuple] = None
+        frequency_tuple: Optional[AudioTuple] = None
+        try:
+            affirmation_tuple = self._generate_affirmation_audio()
+            if affirmation_tuple is None:
+                st.session_state[EXPORT_ERROR_KEY] = (
+                    "Failed to generate affirmation audio."
+                )
+                st.session_state[WIZARD_PROCESSING_ACTIVE_KEY] = False
+                return
+            affirmation_duration = (
+                affirmation_tuple[0].shape[0] / GLOBAL_SR if affirmation_tuple else 0
+            )
+            processing_state = (
+                self._get_current_processing_state()
+            )  # Gets state using constants
+            background_tuple = self._generate_or_load_background_audio(
+                processing_state["wizard_background_choice"],
+                processing_state["wizard_background_noise_type"],
+                processing_state["wizard_background_uploaded_file"],
+                affirmation_duration,
+            )
+            frequency_tuple = self._generate_frequency_audio(
+                processing_state["wizard_frequency_choice"],
+                processing_state["wizard_frequency_params"],
+                affirmation_duration,
+            )
+            logger.info("Calling audio processor for final export...")
+            export_buffer, error_message = self.audio_processor.process_and_export(
+                affirmation_tuple, background_tuple, frequency_tuple, processing_state
+            )
+            if export_buffer and not error_message:
+                st.session_state[EXPORT_BUFFER_KEY] = export_buffer
+                logger.info("Export successful.")
+                st.session_state.pop(PREVIEW_BUFFER_KEY, None)
+            else:
+                st.session_state[EXPORT_ERROR_KEY] = error_message or "Export failed."
+                logger.error(f"Export failed: {st.session_state[EXPORT_ERROR_KEY]}")
+        except Exception as e:
+            logger.exception("Unhandled error during export wrapper.")
+            st.session_state[EXPORT_ERROR_KEY] = f"Unexpected Export Error: {e}"
+        finally:
+            del affirmation_tuple, background_tuple, frequency_tuple
+            gc.collect()
+            logger.debug("Cleaned up temp audio tuples for export.")
+            st.session_state[WIZARD_PROCESSING_ACTIVE_KEY] = False
+            logger.info("Reset wizard_processing_active flag.")
 
     # --- Main Rendering Method ---
     def render_wizard(self):
-        """Renders the main wizard UI and steps."""
         st.title("✨ MindMorph Quick Create Wizard")
-
-        initialize_wizard_state()  # Ensure state exists
-
-        # --- MODIFIED: Check tts_generator instance directly ---
-        if not self.tts_generator:
-            # Error message is already displayed during __init__ if it failed
-            logger.error("render_wizard: TTS generator is not available. Halting render.")
-            # Optionally add a button to retry initialization or go home
-            if st.button("Try Again / Go Home"):
-                # You might want a more specific retry mechanism
-                self._reset_wizard_state()  # Simple reset for now
-            return  # Stop rendering the wizard steps
-        # --- END MODIFIED ---
-
-        step = st.session_state.get("wizard_step", 1)
+        if self._initialization_error:
+            logger.error(f"Render blocked by init error: {self._initialization_error}")
+            st.error(f"FATAL ERROR: {self._initialization_error}. Wizard cannot start.")
+            if st.button("Attempt Reset"):
+                self._reset_wizard_state()
+            return
+        # Use constant for step key
+        step = st.session_state.get(WIZARD_STEP_KEY, 1)
         steps_display = ["Affirmations", "Background", "Frequency", "Mix & Export"]
         progress_step = max(1, min(step, len(steps_display)))
-
         try:
             st.progress(
                 (progress_step) / len(steps_display),
@@ -533,24 +595,26 @@ class QuickWizard:
             )
         except IndexError:
             st.progress(0.0)
-            logger.error(f"Progress bar index out of range: step={step}, progress_step={progress_step}")
-
+            logger.error(f"Progress bar index error: step={step}")
         try:
-            if step == 1:
+            if step_1_affirmations and step == 1:
                 step_1_affirmations.render_step_1(self)
-            elif step == 2:
+            elif step_2_background and step == 2:
                 step_2_background.render_step_2(self)
-            elif step == 3:
+            elif step_3_frequency and step == 3:
                 step_3_frequency.render_step_3(self)
-            elif step == 4:
+            elif step_4_export and step == 4:
                 step_4_export.render_step_4(self)
-            else:
-                st.error(f"Invalid wizard step encountered: {step}. Resetting to Step 1.")
-                logger.error(f"Invalid step detected: {step}. Resetting wizard.")
-                st.session_state.wizard_step = 1
+            elif step > 4 or step < 1:
+                st.error(f"Internal Error: Invalid step ({step}). Resetting.")
+                logger.error(f"Invalid step: {step}.")
+                st.session_state[WIZARD_STEP_KEY] = 1
                 st.rerun()
+            else:
+                st.error(f"Error: UI component for Step {step} failed to load.")
+                logger.error(f"Cannot render Step {step}, module might be None.")
         except Exception as e_render:
-            logger.exception(f"Error rendering wizard step {step}: {e_render}")
-            st.error(f"An error occurred while rendering Step {step}. Please try again or reset the wizard.")
+            logger.exception(f"Error rendering UI for step {step}: {e_render}")
+            st.error(f"An error occurred displaying Step {step}.")
             if st.button("Reset Wizard"):
                 self._reset_wizard_state()

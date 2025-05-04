@@ -56,6 +56,10 @@ MAX_UPLOAD_SIZE_BYTES: int = (
 QUICK_SUBLIMINAL_PRESET_SPEED: float = 2.0
 QUICK_SUBLIMINAL_PRESET_VOLUME: float = 0.05
 
+# Define available noise types for the wizard
+NOISE_TYPES = ["White Noise", "Pink Noise", "Brown Noise"]
+
+
 # --- PIPER VOICES ---
 # PIPER_VOICE_MODEL_PATH = r"assets//voices//female//kristin//medium//en_US-kristin-medium.onnx"  # e.g., en_US-lessac-medium.onnx
 # PIPER_VOICE_CONFIG_PATH = r"assets//voices//female//kristin//medium//en_US-kristin-medium.onnx.json"  # e.g., en_US-lessac-medium.onnx.json

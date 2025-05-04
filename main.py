@@ -78,7 +78,9 @@ def cleanup_resources():
     #         logger.info(f"Cleaned up temporary directory: {temp_dir}")
     #     except Exception as e:
     #         logger.error(f"Error cleaning up temp directory {temp_dir}: {e}")
-    print("MindMorph cleanup finished.", flush=True)  # Also print to stdout for cloud logs
+    print(
+        "MindMorph cleanup finished.", flush=True
+    )  # Also print to stdout for cloud logs
 
 
 def handle_shutdown_signal(signum, frame):
@@ -97,9 +99,13 @@ try:
     signal.signal(signal.SIGINT, handle_shutdown_signal)
     logger.info("Registered signal handlers for SIGTERM and SIGINT.")
 except ValueError:
-    logger.warning("Could not set signal handlers (possibly running in a non-main thread).")
+    logger.warning(
+        "Could not set signal handlers (possibly running in a non-main thread)."
+    )
 except AttributeError:
-    logger.warning("Signal handling not available on this platform (e.g., Windows without WSL).")
+    logger.warning(
+        "Signal handling not available on this platform (e.g., Windows without WSL)."
+    )
 # --- End Graceful Shutdown Setup ---
 
 
@@ -195,7 +201,12 @@ def main():
                 """
             )
             st.markdown("")
-            if st.button("Start Wizard", key="start_wizard_button", use_container_width=True, type="primary"):
+            if st.button(
+                "Start Wizard",
+                key="start_wizard_button",
+                use_container_width=True,
+                type="primary",
+            ):
                 st.session_state.selected_workflow = "wizard"
                 st.rerun()
 
@@ -211,7 +222,11 @@ def main():
                 """
             )
             st.markdown("")
-            if st.button("Open Advanced Editor", key="start_advanced_button", use_container_width=True):
+            if st.button(
+                "Open Advanced Editor",
+                key="start_advanced_button",
+                use_container_width=True,
+            ):
                 st.session_state.selected_workflow = "advanced"
                 if "app_mode" not in st.session_state:
                     st.session_state.app_mode = "Easy"  # Default mode
@@ -271,13 +286,19 @@ def main():
             wizard.render_wizard()
         except ImportError as e_import:
             logger.exception("Failed to import Quick Wizard components.")
-            st.error(f"Error loading Quick Wizard module: {e_import}. Check file structure.", icon="🚨")
+            st.error(
+                f"Error loading Quick Wizard module: {e_import}. Check file structure.",
+                icon="🚨",
+            )
             if st.button("Return to Home"):
                 reset_advanced_editor_state()
                 st.rerun()
         except Exception as e:
             logger.exception("Failed to initialize or render Quick Wizard.")
-            st.error(f"Failed to start Quick Wizard: {e}. Check logs and TTS config.", icon="🔥")
+            st.error(
+                f"Failed to start Quick Wizard: {e}. Check logs and TTS config.",
+                icon="🔥",
+            )
             if st.button("Return to Home"):
                 reset_advanced_editor_state()
                 st.rerun()
@@ -304,17 +325,24 @@ def main():
                     logger.info("PiperTTSGenerator initialized for Advanced Editor.")
                 except Exception as e_tts:
                     logger.exception("Failed to initialize PiperTTSGenerator.")
-                    st.error(f"TTS Engine Error: {e_tts}. Check model paths in config.", icon="🗣️")
+                    st.error(
+                        f"TTS Engine Error: {e_tts}. Check model paths in config.",
+                        icon="🗣️",
+                    )
                     # Allow app to continue without TTS if possible, or provide way back
                     st.session_state.tts_generator = None  # Indicate TTS is unavailable
                     # Optionally, force back to home:
                     # reset_advanced_editor_state(); st.rerun()
 
             if "project_handler" not in st.session_state:
-                st.session_state.project_handler = ProjectHandler(st.session_state.app_state)
+                st.session_state.project_handler = ProjectHandler(
+                    st.session_state.app_state
+                )
             if "ui_manager" not in st.session_state:
                 # Pass the potentially None TTS generator
-                st.session_state.ui_manager = UIManager(st.session_state.app_state, st.session_state.get("tts_generator"))
+                st.session_state.ui_manager = UIManager(
+                    st.session_state.app_state, st.session_state.get("tts_generator")
+                )
 
             # --- Render Top Bar for Advanced Editor ---
             st.title("🧠 MindMorph - Advanced Editor")
@@ -328,15 +356,28 @@ def main():
                 except ValueError:
                     current_mode_index = 0  # Default to Easy if state is invalid
                     st.session_state.app_mode = "Easy"
-                selected_mode = st.radio("Editor Mode:", options=mode_options, index=current_mode_index, key="mode_selector_radio", horizontal=True)
-                st.caption("Easy mode simplifies the interface; Advanced mode shows all track controls.")
+                selected_mode = st.radio(
+                    "Editor Mode:",
+                    options=mode_options,
+                    index=current_mode_index,
+                    key="mode_selector_radio",
+                    horizontal=True,
+                )
+                st.caption(
+                    "Easy mode simplifies the interface; Advanced mode shows all track controls."
+                )
                 if selected_mode != st.session_state.app_mode:
                     logger.info(f"Advanced editor mode changed to '{selected_mode}'")
                     st.session_state.app_mode = selected_mode
                     # No need to clear export/preview buffers on mode change, just rerun
                     st.rerun()
             with header_cols[1]:  # Back to Home Button
-                if st.button("🏠 Back to Home", key="advanced_back_home", help="Exit Advanced Editor.", use_container_width=True):
+                if st.button(
+                    "🏠 Back to Home",
+                    key="advanced_back_home",
+                    help="Exit Advanced Editor.",
+                    use_container_width=True,
+                ):
                     reset_advanced_editor_state()
                     st.rerun()
             st.markdown("---")
@@ -346,7 +387,10 @@ def main():
 
         except ImportError as e_import:
             logger.exception("Failed to import Advanced Editor components.")
-            st.error(f"Error loading Advanced Editor module: {e_import}. Check file structure.", icon="🚨")
+            st.error(
+                f"Error loading Advanced Editor module: {e_import}. Check file structure.",
+                icon="🚨",
+            )
             if st.button("Return to Home"):
                 reset_advanced_editor_state()
                 st.rerun()
@@ -358,7 +402,9 @@ def main():
                 st.rerun()
 
     else:  # Invalid state
-        logger.warning(f"Invalid selected_workflow state: {st.session_state.selected_workflow}. Resetting.")
+        logger.warning(
+            f"Invalid selected_workflow state: {st.session_state.selected_workflow}. Resetting."
+        )
         st.session_state.selected_workflow = None
         st.rerun()
 
@@ -384,4 +430,7 @@ if __name__ == "__main__":
         except Exception as display_error:
             # Fallback if st.error fails
             print(f"CRITICAL ERROR: {e}", file=sys.stderr)
-            print(f"Could not display error in Streamlit: {display_error}", file=sys.stderr)
+            print(
+                f"Could not display error in Streamlit: {display_error}",
+                file=sys.stderr,
+            )

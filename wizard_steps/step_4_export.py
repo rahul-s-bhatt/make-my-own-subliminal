@@ -1,83 +1,114 @@
 # wizard_steps/step_4_export.py
 # ==========================================
 # UI Rendering for Wizard Step 4: Review, Mix, Preview, and Export
+# Uses constants from quick_wizard_config.py
 # ==========================================
 
 import logging
 import re
-from io import BytesIO
 
-import numpy as np
 import streamlit as st
 
-from audio_utils.audio_io import save_audio_to_bytesio  # Needed for preview
-from config import GLOBAL_SR, QUICK_SUBLIMINAL_PRESET_SPEED  # Added GLOBAL_SR
+# Import constants from the central config file
+from .quick_wizard_config import EXPORT_FORMATS  # Import list of formats
+from .quick_wizard_config import (
+    AFFIRM_APPLY_SPEED_KEY,
+    AFFIRMATION_TEXT_KEY,
+    AFFIRMATION_VOLUME_KEY,
+    BG_CHOICE_KEY,
+    BG_NOISE_TYPE_KEY,
+    BG_UPLOADED_FILE_KEY,
+    BG_VOLUME_KEY,
+    DEFAULT_APPLY_SPEED,
+    EXPORT_BUFFER_KEY,
+    EXPORT_ERROR_KEY,
+    EXPORT_FORMAT_KEY,
+    FREQ_CHOICE_KEY,
+    FREQ_PARAMS_KEY,
+    FREQ_VOLUME_KEY,
+    OUTPUT_FILENAME_KEY,
+    PREVIEW_BUFFER_KEY,
+    PREVIEW_ERROR_KEY,
+    WIZARD_PROCESSING_ACTIVE_KEY,
+)
+
+# Import necessary components
+try:
+    pass
+
+    AUDIO_IO_AVAILABLE = True
+except ImportError:
+    AUDIO_IO_AVAILABLE = False
+    logging.warning("audio_utils.audio_io not found.")
 
 # Optional MP3 export dependency check
 try:
-    from quick_wizard import PYDUB_AVAILABLE
+    pass
+
+    PYDUB_AVAILABLE = True
 except ImportError:
-    try:
-        from pydub import AudioSegment
-
-        PYDUB_AVAILABLE = True
-    except ImportError:
-        PYDUB_AVAILABLE = False
-
+    PYDUB_AVAILABLE = False
+    logging.info("pydub library not found. MP3 export disabled.")
 
 logger = logging.getLogger(__name__)
-
-# Define preview duration
-PREVIEW_DURATION_SECONDS = 30
+PREVIEW_DURATION_SECONDS = 10
 
 
 def render_step_4(wizard):
     """
-    Renders the UI for Step 4: Review, Mix, Preview and Export.
+    Renders the UI for Step 4: Review Settings, Mix, Preview and Export.
 
     Args:
-        wizard: The instance of the main QuickWizard class.
+        wizard: An instance of the QuickWizard class.
     """
-    st.subheader("Step 4: Mix, Preview & Export")
-    st.write("Adjust final levels, preview the mix, and generate your subliminal!")
+    st.subheader("Step 4: Review Settings, Mix & Export")
+    st.write("Review your selections, adjust final volume levels...")
 
-    # --- Review Selections ---
+    # --- Review Selections (Based on Settings) ---
     st.markdown("**Review Selections:**")
     summary_data = []
-    affirm_audio_exists = st.session_state.get("wizard_affirmation_audio") is not None
-    bg_audio_exists = st.session_state.get("wizard_background_audio") is not None
-    freq_audio_exists = st.session_state.get("wizard_frequency_audio") is not None
 
-    # Affirmations Summary
-    affirm_source = st.session_state.get("wizard_affirmation_source")
-    affirm_text = st.session_state.get("wizard_affirmation_text", "")
-    affirm_summary_line = "- **Affirmations:** ⚠️ **MISSING** (Go back to Step 1)"
-    if affirm_audio_exists:
-        if affirm_source == "text":
-            if affirm_text.strip():
-                affirm_summary_line = f"- **Affirmations:** Text Input ('{affirm_text[:30]}...')"
-            else:
-                affirm_summary_line = "- **Affirmations:** Audio Ready"
-        elif affirm_source == "upload_audio":
-            affirm_summary_line = "- **Affirmations:** Uploaded Audio File"
+    # 1. Affirmations Summary
+    affirm_text = st.session_state.get(AFFIRMATION_TEXT_KEY, "").strip()
+    speed_setting = st.session_state.get(AFFIRM_APPLY_SPEED_KEY, DEFAULT_APPLY_SPEED)
+    speed_indicator = (
+        " (Speed Change Enabled)" if speed_setting else " (Speed Change Disabled)"
+    )
+    if affirm_text:
+        summary_data.append(
+            f"- **Affirmations:** Text Input ('{affirm_text[:30].strip()}...'){speed_indicator}"
+        )
+    else:
+        summary_data.append("- **Affirmations:** ⚠️ **MISSING** (Go back to Step 1)")
+
+    # 2. Background Summary
+    bg_choice = st.session_state.get(BG_CHOICE_KEY, "none")
+    if bg_choice == "upload":
+        uploaded_file = st.session_state.get(BG_UPLOADED_FILE_KEY)
+        if uploaded_file:
+            summary_data.append(
+                f"- **Background:** Uploaded File ('{uploaded_file.name}')"
+            )
         else:
-            affirm_summary_line = "- **Affirmations:** Audio Ready"
-    summary_data.append(affirm_summary_line)
-
-    # Background Summary
-    bg_choice = st.session_state.get("wizard_background_choice")
-    if bg_choice == "upload" and bg_audio_exists:
-        summary_data.append("- **Background:** Uploaded Audio")
-    elif bg_choice == "noise" and bg_audio_exists:
-        noise_type = st.session_state.get("wizard_background_noise_type", "Unknown Noise")
-        summary_data.append(f"- **Background:** {noise_type}")
+            summary_data.append(
+                "- **Background:** Upload Selected (⚠️ **File Missing?** Go back to Step 2)"
+            )
+    elif bg_choice == "noise":
+        noise_type = st.session_state.get(BG_NOISE_TYPE_KEY, "N/A")
+        summary_data.append(f"- **Background:** Generated Noise ('{noise_type}')")
     else:
         summary_data.append("- **Background:** None")
 
-    # Frequency Summary
-    freq_choice = st.session_state.get("wizard_frequency_choice", "None")
-    if freq_choice != "None" and freq_audio_exists:
-        summary_data.append(f"- **Frequency:** {freq_choice}")
+    # 3. Frequency Summary
+    freq_choice = st.session_state.get(FREQ_CHOICE_KEY, "None")
+    if freq_choice != "None":
+        freq_params = st.session_state.get(FREQ_PARAMS_KEY, {})
+        params_str = ", ".join(
+            f"{k.replace('_freq', '').capitalize()}={v}Hz"
+            for k, v in freq_params.items()
+            if v is not None
+        )
+        summary_data.append(f"- **Frequency:** {freq_choice} ({params_str})")
     else:
         summary_data.append("- **Frequency:** None")
 
@@ -87,138 +118,129 @@ def render_step_4(wizard):
     # --- Mixing Controls ---
     st.markdown("**Mixing Controls:**")
     col_vol1, col_vol2, col_vol3 = st.columns(3)
+    bg_choice_for_vol = st.session_state.get(BG_CHOICE_KEY, "none")
+    freq_choice_for_vol = st.session_state.get(FREQ_CHOICE_KEY, "None")
+
     with col_vol1:
-        st.session_state.wizard_affirmation_volume = st.slider(
+        st.session_state[AFFIRMATION_VOLUME_KEY] = st.slider(
             "🗣️ Affirmation Vol.",
-            min_value=0.0,
-            max_value=1.0,
-            value=st.session_state.wizard_affirmation_volume,
-            step=0.05,
-            key="wizard_affirm_vol_slider_step4",
-            help="Adjust the volume of the affirmation track.",
+            0.0,
+            1.0,
+            st.session_state.get(AFFIRMATION_VOLUME_KEY, 1.0),
+            0.05,
+            key="wizard_affirm_vol_slider_step4",  # Widget key can be different
         )
     with col_vol2:
-        disable_bg_vol = not bg_audio_exists
-        st.session_state.wizard_background_volume = st.slider(
+        disable_bg_vol = bg_choice_for_vol == "none"
+        st.session_state[BG_VOLUME_KEY] = st.slider(
             "🎵 Background Vol.",
-            min_value=0.0,
-            max_value=1.0,
-            value=st.session_state.wizard_background_volume,
-            step=0.05,
+            0.0,
+            1.0,
+            st.session_state.get(BG_VOLUME_KEY, 0.7),
+            0.05,
             key="wizard_bg_vol_slider_step4",
-            help="Adjust the volume of the background track (if added).",
             disabled=disable_bg_vol,
         )
     with col_vol3:
-        disable_freq_vol = not freq_audio_exists
-        st.session_state.wizard_frequency_volume = st.slider(
+        disable_freq_vol = freq_choice_for_vol == "None"
+        st.session_state[FREQ_VOLUME_KEY] = st.slider(
             "〰️ Frequency Vol.",
-            min_value=0.0,
-            max_value=1.0,
-            value=st.session_state.wizard_frequency_volume,
-            step=0.05,
+            0.0,
+            1.0,
+            st.session_state.get(FREQ_VOLUME_KEY, 0.2),
+            0.05,
             key="wizard_freq_vol_slider_step4",
-            help="Adjust the volume of the frequency track (if added).",
             disabled=disable_freq_vol,
         )
-
-    # --- Speed Setting Toggle ---
-    apply_speed_setting = st.checkbox(
-        f"Apply Quick Subliminal Speed ({QUICK_SUBLIMINAL_PRESET_SPEED}x)",
-        value=st.session_state.get("wizard_apply_quick_settings", True),
-        key="wizard_apply_quick_settings_checkbox",
-        help=f"Check this to automatically speed up the affirmations to {QUICK_SUBLIMINAL_PRESET_SPEED}x.",
-    )
-    st.session_state.wizard_apply_quick_settings = apply_speed_setting
     st.divider()
 
     # --- Preview Section ---
     st.markdown("**Preview Mix:**")
-    # --- ADDED: Instruction for preview ---
-    st.caption("Adjust controls above, then click 'Generate Preview' to hear the changes.")
-    # --- END ADDED ---
-    preview_disabled = not affirm_audio_exists  # Can't preview without affirmations
-    preview_tooltip = "Generate a short preview of the mix with current settings." if not preview_disabled else "Add affirmations in Step 1 to enable preview."
+    st.caption(f"Generate a {PREVIEW_DURATION_SECONDS}-second preview...")
+    affirmations_present = bool(affirm_text)
+    preview_disabled = not affirmations_present
+    preview_tooltip = (
+        "Generate preview." if affirmations_present else "Add affirmation text first."
+    )
+    if st.button(
+        f"🎧 Generate Preview ({PREVIEW_DURATION_SECONDS}s)",
+        key="wizard_preview_button",
+        disabled=preview_disabled,
+        help=preview_tooltip,
+        use_container_width=True,
+    ):
+        with st.spinner(f"Generating preview..."):
+            wizard.generate_preview(PREVIEW_DURATION_SECONDS)
+        st.rerun()
 
-    if st.button(f"🎧 Generate Preview ({PREVIEW_DURATION_SECONDS}s)", key="wizard_preview_button", disabled=preview_disabled, help=preview_tooltip, use_container_width=True):
-        with st.spinner(f"Generating {PREVIEW_DURATION_SECONDS}s preview..."):
-            try:
-                # Call the preview generation function from the wizard instance
-                preview_audio, preview_sr = wizard._generate_preview_mix(PREVIEW_DURATION_SECONDS)
-                if preview_audio is not None and preview_sr is not None:
-                    # Save preview to buffer for st.audio
-                    preview_buffer = save_audio_to_bytesio(preview_audio, preview_sr)
-                    st.session_state.wizard_preview_buffer = preview_buffer  # Store in state
-                    st.session_state.wizard_preview_error = None
-                    logger.info("Preview generated successfully.")
-                else:
-                    st.session_state.wizard_preview_buffer = None
-                    st.session_state.wizard_preview_error = "Preview generation failed (empty audio)."
-                    logger.error("Preview generation returned None or empty audio.")
-            except Exception as e:
-                logger.exception("Error generating preview mix.")
-                st.session_state.wizard_preview_buffer = None
-                st.session_state.wizard_preview_error = f"Preview Error: {e}"
-
-    # Display the preview audio player or error message
-    preview_buffer = st.session_state.get("wizard_preview_buffer")
-    preview_error = st.session_state.get("wizard_preview_error")
-
+    preview_buffer = st.session_state.get(PREVIEW_BUFFER_KEY)
+    preview_error = st.session_state.get(PREVIEW_ERROR_KEY)
     if preview_buffer:
-        st.audio(preview_buffer, format="audio/wav", start_time=0)
+        try:
+            st.audio(preview_buffer, format="audio/wav")
+        except Exception as e:
+            st.error(f"Error displaying preview: {e}")
+            logger.error(f"Error display preview: {e}")
+            st.session_state.pop(PREVIEW_BUFFER_KEY, None)
     elif preview_error:
-        st.error(preview_error)
-        # Clear error after displaying
-        st.session_state.wizard_preview_error = None
+        st.error(f"Preview Error: {preview_error}")
+        st.session_state.pop(PREVIEW_ERROR_KEY, None)
     st.divider()
 
     # --- Export Options ---
     st.markdown("**Export Settings:**")
     col_export1, col_export2 = st.columns([2, 1])
     with col_export1:
-        st.session_state.wizard_output_filename = st.text_input(
-            "Output Filename (no extension):", value=st.session_state.wizard_output_filename, key="wizard_filename_input", label_visibility="collapsed"
+        st.session_state[OUTPUT_FILENAME_KEY] = st.text_input(
+            "Output Filename (no extension):",
+            st.session_state.get(OUTPUT_FILENAME_KEY, "mindmorph_mix"),
+            key="wizard_filename_input",
         )
     with col_export2:
-        export_formats = ["WAV"]
-        help_text = "Export in WAV format (lossless, larger file size)."
-        if PYDUB_AVAILABLE:
-            export_formats.append("MP3")
-            help_text = "Choose WAV (lossless, large) or MP3 (compressed, smaller - requires ffmpeg)."
-        else:
-            help_text += " MP3 export disabled (requires 'pydub' library and 'ffmpeg')."
+        export_formats_options = EXPORT_FORMATS.copy()  # Use list from config
+        help_text = "Choose WAV or MP3."
+        if not PYDUB_AVAILABLE:
+            if "MP3" in export_formats_options:
+                export_formats_options.remove("MP3")
+            help_text = "WAV format only (MP3 requires pydub library)."
+        current_format = st.session_state.get(EXPORT_FORMAT_KEY, "WAV")
+        if current_format not in export_formats_options:
+            current_format = "WAV"  # Default if invalid
         try:
-            current_format_index = export_formats.index(st.session_state.wizard_export_format.upper())
+            current_format_index = export_formats_options.index(current_format)
         except ValueError:
             current_format_index = 0
-            st.session_state.wizard_export_format = "WAV"
-
         selected_format = st.radio(
-            "Format:", export_formats, key="wizard_export_format_radio", horizontal=True, help=help_text, index=current_format_index, label_visibility="collapsed"
+            "Format:",
+            export_formats_options,
+            index=current_format_index,
+            key="wizard_export_format_radio",
+            horizontal=True,
+            help=help_text,
         )
-        if selected_format != st.session_state.wizard_export_format:
-            st.session_state.wizard_export_format = selected_format
+        if selected_format != current_format:
+            st.session_state[EXPORT_FORMAT_KEY] = selected_format
             st.rerun()
 
     # --- Generate Button ---
-    is_processing = st.session_state.get("wizard_processing_active", False)
-    affirmations_missing = not affirm_audio_exists  # Re-check
-    mp3_unavailable = st.session_state.wizard_export_format == "MP3" and not PYDUB_AVAILABLE
-
-    export_disabled = is_processing or affirmations_missing or mp3_unavailable
-
+    is_processing = st.session_state.get(WIZARD_PROCESSING_ACTIVE_KEY, False)
+    export_disabled = is_processing or not affirmations_present
     export_tooltip = ""
     if is_processing:
-        export_tooltip = "Processing... Please wait."
-    elif affirmations_missing:
-        export_tooltip = "Affirmation audio is missing. Please go back to Step 1."
-    elif mp3_unavailable:
-        export_tooltip = "MP3 export requires 'pydub' and 'ffmpeg'. Choose WAV or install dependencies."
+        export_tooltip = "Processing..."
+    elif not affirmations_present:
+        export_tooltip = "Add affirmation text first."
     else:
-        export_tooltip = "Click to generate the final audio mix."
+        export_tooltip = "Generate final audio."
+    if st.session_state.get(EXPORT_FORMAT_KEY) == "MP3" and not PYDUB_AVAILABLE:
+        export_disabled = True
+        export_tooltip = "MP3 unavailable."
 
-    generate_button_label = "⏳ Processing..." if is_processing else f"Generate & Prepare Download (. {st.session_state.wizard_export_format.lower()})"
-
+    generate_button_label = (
+        "⏳ Processing..."
+        if is_processing
+        else f"Generate & Prepare Download (. {st.session_state.get(EXPORT_FORMAT_KEY, 'WAV').lower()})"
+    )
     if st.button(
         generate_button_label,
         key="wizard_generate_button",
@@ -227,84 +249,71 @@ def render_step_4(wizard):
         help=export_tooltip,
         use_container_width=True,
     ):
-        st.session_state.wizard_processing_active = True
-        # Clear previous results before starting new export
-        st.session_state.wizard_export_buffer = None
-        st.session_state.wizard_export_error = None
-        st.session_state.wizard_preview_buffer = None  # Clear preview too
-        st.session_state.wizard_preview_error = None
-        logger.info("Set wizard_processing_active flag to True.")
+        st.session_state.pop(EXPORT_BUFFER_KEY, None)
+        st.session_state.pop(EXPORT_ERROR_KEY, None)
+        st.session_state.pop(PREVIEW_BUFFER_KEY, None)
+        st.session_state.pop(PREVIEW_ERROR_KEY, None)
+        logger.info(
+            "Generate button clicked, calling wizard.process_and_export_audio()"
+        )
+        wizard.process_and_export_audio()
         st.rerun()
 
-    # Perform processing only if flag was just set
-    if st.session_state.get("wizard_processing_active", False):
-        if st.session_state.get("wizard_export_buffer") is None and st.session_state.get("wizard_export_error") is None:
-            logger.info("Processing flag is True, starting export process...")
-            with st.spinner("Generating final audio mix... This may take a moment."):
-                wizard._process_and_export()  # Call the main processing function
-            logger.info("Processing finished, triggering rerun to display results.")
-            st.rerun()  # Rerun AFTER processing finishes
-
     # --- Show Download Button or Error ---
-    export_buffer = st.session_state.get("wizard_export_buffer")
-    export_error = st.session_state.get("wizard_export_error")
-
+    export_buffer = st.session_state.get(EXPORT_BUFFER_KEY)
+    export_error = st.session_state.get(EXPORT_ERROR_KEY)
     if export_buffer:
-        raw_filename = st.session_state.wizard_output_filename
-        sanitized_filename = re.sub(r'[\\/*?:"<>|]', "", raw_filename).strip()
-        if not sanitized_filename:
-            sanitized_filename = "mindmorph_quick_mix"
-
-        file_ext = st.session_state.wizard_export_format.lower()
+        raw_filename = st.session_state.get(OUTPUT_FILENAME_KEY, "mindmorph_mix")
+        sanitized_filename = (
+            re.sub(r'[\\/*?:"<>|]', "", raw_filename).strip() or "mindmorph_mix"
+        )
+        file_ext = st.session_state.get(EXPORT_FORMAT_KEY, "WAV").lower()
         download_filename = f"{sanitized_filename}.{file_ext}"
         mime_type = f"audio/{file_ext}" if file_ext == "wav" else "audio/mpeg"
-
-        st.download_button(
-            label=f"⬇️ Download: {download_filename}",
-            data=export_buffer,
-            file_name=download_filename,
-            mime=mime_type,
-            key="wizard_download_button",
-            use_container_width=True,
-            help="Click to download the generated subliminal audio file.",
-            on_click=wizard._reset_wizard_state,  # Reset wizard after download starts
-        )
-
+        try:
+            st.download_button(
+                label=f"⬇️ Download: {download_filename}",
+                data=export_buffer,
+                file_name=download_filename,
+                mime=mime_type,
+                key="wizard_download_button",
+                use_container_width=True,
+            )
+        except Exception as e:
+            st.error(f"Error creating download button: {e}")
+            logger.error(f"Error dl button: {e}")
+            st.session_state.pop(EXPORT_BUFFER_KEY, None)
     elif export_error:
         st.error(f"Export Failed: {export_error}")
-        st.session_state.wizard_export_error = None  # Clear error after display
-        if st.session_state.get("wizard_processing_active"):
-            st.session_state.wizard_processing_active = False  # Ensure flag is reset on error
+        st.session_state.pop(EXPORT_ERROR_KEY, None)
+        if st.session_state.get(WIZARD_PROCESSING_ACTIVE_KEY):
+            st.session_state[WIZARD_PROCESSING_ACTIVE_KEY] = False
 
     # --- Navigation Buttons ---
     st.divider()
     col_nav_1, col_nav_2, col_nav_3 = st.columns([1, 2, 2])
-    with col_nav_1:  # Home
+    nav_disabled = is_processing
+    with col_nav_1:
         if st.button(
             "🏠 Back to Home",
             key="wizard_step4_home",
             use_container_width=True,
-            help="Exit Wizard and return to main menu.",
-            disabled=is_processing,
+            help="Exit wizard.",
+            disabled=nav_disabled,
         ):
-            if not is_processing:
-                wizard._reset_wizard_state()
-    with col_nav_2:  # Back
+            wizard._reset_wizard_state()
+    with col_nav_2:
         if st.button(
             "⬅️ Back: Frequency",
             key="wizard_step4_back",
             use_container_width=True,
-            disabled=is_processing,
+            help="Go back to Step 3.",
+            disabled=nav_disabled,
         ):
-            if not is_processing:
-                st.session_state.wizard_export_buffer = None
-                st.session_state.wizard_export_error = None
-                st.session_state.wizard_preview_buffer = None
-                st.session_state.wizard_preview_error = None
-                wizard._go_to_step(3)
-    with col_nav_3:  # Finish Placeholder
+            wizard._go_to_step(3)
+    with col_nav_3:
         st.button(
-            "Finish",
+            "Finish ✨",
             key="wizard_step4_finish_placeholder",
             disabled=True,
             use_container_width=True,

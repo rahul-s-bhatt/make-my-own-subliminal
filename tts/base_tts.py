@@ -5,7 +5,7 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple
+from typing import Tuple
 
 import numpy as np
 
@@ -27,7 +27,6 @@ class BaseTTSGenerator(ABC):
         Initialize the TTS engine and any necessary resources.
         Specific implementations will define required kwargs.
         """
-        pass
 
     @abstractmethod
     def generate(self, text: str) -> Tuple[AudioData, SampleRate]:
@@ -47,7 +46,6 @@ class BaseTTSGenerator(ABC):
             ValueError: If input text is empty or invalid.
             RuntimeError: If any critical error occurs during synthesis.
         """
-        pass
 
     # Optional: Add methods for listing voices, setting properties etc. if needed
     # def list_voices(self) -> List[str]:

@@ -29,16 +29,14 @@ try:
     page_icon = Image.open(FAVICON_PATH)
 except Exception:
     page_icon = "🧠"
-st.set_page_config(
-    layout="wide", page_title="MindMorph - Subliminal Editor", page_icon=page_icon
-)
+st.set_page_config(layout="wide", page_title="MindMorph - Subliminal Editor", page_icon=page_icon)
 logger.info(f"Theme preference set to: {selected_theme_name}")
 
 # --- Google Analytics ---
 if GA_MEASUREMENT_ID and GA_MEASUREMENT_ID != "YOUR_GA_MEASUREMENT_ID_HERE":
     google_analytics_code = f"""<script async src="https://www.googletagmanager.com/gtag/js?id={GA_MEASUREMENT_ID}"></script><script>window.dataLayer = window.dataLayer || []; function gtag(){{dataLayer.push(arguments);}} gtag('js', new Date()); gtag('config', '{GA_MEASUREMENT_ID}');</script>"""
-    components.html(google_analytics_code, height=0)
-    # st.markdown(google_analytics_code, unsafe_allow_html=True) # Duplicate? components.html should suffice
+    components.html(google_analytics_code, height=0)  # DON' REMOVE THIS LINE
+    st.markdown(google_analytics_code, unsafe_allow_html=True)  # DON' REMOVE THIS LINE
     logger.info(f"Injected Google Analytics tag.")
 else:
     logger.warning("Google Analytics Measurement ID is not set.")
@@ -140,9 +138,7 @@ def main():
         col1, col2 = st.columns(2, gap="large")
         with col1:
             st.markdown("### ✨ Quick Create Wizard")
-            st.markdown(
-                "- Simple, step-by-step process.\n- Use text or audio affirmations.\n- Optional background sounds/frequencies.\n- High-quality offline TTS (Piper)."
-            )
+            st.markdown("- Simple, step-by-step process.\n- Use text or audio affirmations.\n- Optional background sounds/frequencies.\n- High-quality offline TTS (Piper).")
             if st.button(
                 "Start Wizard",
                 key="start_wizard_button",
@@ -153,9 +149,7 @@ def main():
                 st.rerun()
         with col2:
             st.markdown("### 🎚️ Advanced Editor")
-            st.markdown(
-                "- Full control with multiple tracks.\n- Fine-tune volume, speed, pitch, etc.\n- Advanced effects (ultrasonic shift).\n- Save/Load projects."
-            )
+            st.markdown("- Full control with multiple tracks.\n- Fine-tune volume, speed, pitch, etc.\n- Advanced effects (ultrasonic shift).\n- Save/Load projects.")
             if st.button(
                 "Open Advanced Editor",
                 key="start_advanced_button",
@@ -225,17 +219,13 @@ def main():
                     st.session_state.tts_generator = None  # Indicate TTS unavailable
 
             if "project_handler" not in st.session_state:
-                st.session_state.project_handler = ProjectHandler(
-                    st.session_state.app_state
-                )
+                st.session_state.project_handler = ProjectHandler(st.session_state.app_state)
 
             # --- MODIFIED: Pass tts_generator to UIManager ---
             if "ui_manager" not in st.session_state:
                 st.session_state.ui_manager = UIManager(
                     app_state=st.session_state.app_state,
-                    tts_generator=st.session_state.get(
-                        "tts_generator"
-                    ),  # Pass the generator instance (can be None)
+                    tts_generator=st.session_state.get("tts_generator"),  # Pass the generator instance (can be None)
                 )
             # --- End Modification ---
 
@@ -292,9 +282,7 @@ def main():
 
     # --- Invalid State ---
     else:
-        logger.warning(
-            f"Invalid selected_workflow state: {st.session_state.selected_workflow}. Resetting."
-        )
+        logger.warning(f"Invalid selected_workflow state: {st.session_state.selected_workflow}. Resetting.")
         st.session_state.selected_workflow = None
         st.rerun()
 

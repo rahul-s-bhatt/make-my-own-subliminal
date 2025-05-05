@@ -53,17 +53,29 @@ try:
     from pydub import AudioSegment
 
     try:
-        subprocess.run(["ffmpeg", "-version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        subprocess.run(
+            ["ffmpeg", "-version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
         PYDUB_AVAILABLE = True
         logging.info("pydub and ffmpeg seem available.")
     except (FileNotFoundError, subprocess.CalledProcessError):
         try:
-            subprocess.run(["avconv", "-version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            subprocess.run(
+                ["avconv", "-version"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
             PYDUB_AVAILABLE = True
             logging.info("pydub and libav (avconv) seem available.")
         except (FileNotFoundError, subprocess.CalledProcessError):
             PYDUB_AVAILABLE = False
-            logging.warning("pydub found, but ffmpeg or avconv likely missing. MP3 loading/export might fail.")
+            logging.warning(
+                "pydub found, but ffmpeg or avconv likely missing. MP3 loading/export might fail."
+            )
 
 except ImportError:
     PYDUB_AVAILABLE = False
@@ -98,7 +110,9 @@ class WizardAudioProcessor:
             try:
                 audio_data = np.array(audio_data, dtype=np.float32)
             except Exception as e:
-                raise TypeError(f"Input must be convertible to a NumPy array. Error: {e}")
+                raise TypeError(
+                    f"Input must be convertible to a NumPy array. Error: {e}"
+                )
 
         if audio_data.dtype != np.float32:
             # Convert non-float32 numpy arrays
@@ -124,12 +138,18 @@ class WizardAudioProcessor:
                 return audio_data
             else:
                 # Unsupported number of channels
-                raise ValueError(f"Unsupported audio shape for stereo conversion: {audio_data.shape}. Expected 1 or 2 channels.")
+                raise ValueError(
+                    f"Unsupported audio shape for stereo conversion: {audio_data.shape}. Expected 1 or 2 channels."
+                )
         else:
             # Unsupported dimensions
-            raise ValueError(f"Unsupported audio dimensions for stereo conversion: {audio_data.ndim}. Expected 1 or 2.")
+            raise ValueError(
+                f"Unsupported audio dimensions for stereo conversion: {audio_data.ndim}. Expected 1 or 2."
+            )
 
-    def _apply_speed_change(self, audio_data: AudioData, sr: int, speed_factor: float) -> AudioData:
+    def _apply_speed_change(
+        self, audio_data: AudioData, sr: int, speed_factor: float
+    ) -> AudioData:
         """Applies time stretching using librosa."""
         if not isinstance(audio_data, np.ndarray):
             logger.warning("Speed change skipped: Input is not a NumPy array.")
@@ -138,7 +158,9 @@ class WizardAudioProcessor:
         try:
             audio_data = self._ensure_float32(self._ensure_stereo(audio_data))
         except (TypeError, ValueError) as e:
-            logger.warning(f"Speed change skipped: Could not ensure stereo float32. Error: {e}")
+            logger.warning(
+                f"Speed change skipped: Could not ensure stereo float32. Error: {e}"
+            )
             return audio_data
 
         if speed_factor <= 0 or speed_factor == 1.0:
@@ -147,14 +169,18 @@ class WizardAudioProcessor:
         logger.info(f"Applying speed change: {speed_factor:.2f}x")
         try:
             # Librosa expects shape (channels, samples) for time_stretch
-            stretched_audio = librosa.effects.time_stretch(audio_data.T, rate=speed_factor)
+            stretched_audio = librosa.effects.time_stretch(
+                audio_data.T, rate=speed_factor
+            )
             # Transpose back to (samples, channels)
             return stretched_audio.T
         except Exception as e:
             logger.exception(f"Error during time stretch: {e}")
             return audio_data  # Return original on error
 
-    def _loop_audio_to_length(self, audio_data: AudioData, target_length: int) -> AudioData:
+    def _loop_audio_to_length(
+        self, audio_data: AudioData, target_length: int
+    ) -> AudioData:
         """Loops or truncates audio to a target number of samples."""
         if not isinstance(audio_data, np.ndarray):
             raise TypeError("Input must be a NumPy array for looping.")
@@ -194,7 +220,9 @@ class WizardAudioProcessor:
 
     # --- Dynamic Loading/Generation Methods ---
 
-    def load_uploaded_audio(self, uploaded_file: st.runtime.uploaded_file_manager.UploadedFile) -> AudioTuple:
+    def load_uploaded_audio(
+        self, uploaded_file: st.runtime.uploaded_file_manager.UploadedFile
+    ) -> AudioTuple:
         """
         Loads audio from a Streamlit UploadedFile object.
         Attempts to use pydub for MP3s if available, otherwise uses librosa.
@@ -205,23 +233,33 @@ class WizardAudioProcessor:
 
         file_name = uploaded_file.name
         file_ext = os.path.splitext(file_name)[1].lower()
-        logger.info(f"Attempting to load uploaded file: '{file_name}' (Extension: {file_ext})")
+        logger.info(
+            f"Attempting to load uploaded file: '{file_name}' (Extension: {file_ext})"
+        )
 
         audio_data: Optional[AudioData] = None
         sr: Optional[int] = None
 
         # --- Attempt 1: Use pydub for MP3 if available ---
         if file_ext == ".mp3" and PYDUB_AVAILABLE:
-            logger.info("MP3 detected and pydub available. Attempting load with pydub...")
+            logger.info(
+                "MP3 detected and pydub available. Attempting load with pydub..."
+            )
             try:
                 # Read the file content into memory for pydub
                 file_content = BytesIO(uploaded_file.getvalue())
-                segment = AudioSegment.from_file(file_content)  # Let pydub detect format within MP3 container
-                logger.info(f"pydub loaded '{file_name}'. Frame rate: {segment.frame_rate}, Channels: {segment.channels}")
+                segment = AudioSegment.from_file(
+                    file_content
+                )  # Let pydub detect format within MP3 container
+                logger.info(
+                    f"pydub loaded '{file_name}'. Frame rate: {segment.frame_rate}, Channels: {segment.channels}"
+                )
 
                 # Resample to GLOBAL_SR if necessary
                 if segment.frame_rate != GLOBAL_SR:
-                    logger.info(f"Resampling from {segment.frame_rate} Hz to {GLOBAL_SR} Hz.")
+                    logger.info(
+                        f"Resampling from {segment.frame_rate} Hz to {GLOBAL_SR} Hz."
+                    )
                     segment = segment.set_frame_rate(GLOBAL_SR)
 
                 # Convert to stereo if necessary
@@ -229,7 +267,9 @@ class WizardAudioProcessor:
                     logger.info("Converting mono pydub segment to stereo.")
                     segment = segment.set_channels(2)
                 elif segment.channels != 2:
-                    raise ValueError(f"Unsupported number of channels from pydub: {segment.channels}")
+                    raise ValueError(
+                        f"Unsupported number of channels from pydub: {segment.channels}"
+                    )
 
                 # Convert pydub segment to numpy array (float32, normalized)
                 # pydub samples are integers, librosa expects floats between -1 and 1
@@ -241,15 +281,21 @@ class WizardAudioProcessor:
                 elif segment.sample_width == 4:  # 32-bit int? (less common)
                     audio_data = samples.astype(np.float32) / 2147483648.0
                 else:
-                    raise ValueError(f"Unsupported sample width from pydub: {segment.sample_width}")
+                    raise ValueError(
+                        f"Unsupported sample width from pydub: {segment.sample_width}"
+                    )
 
                 # Reshape to (samples, channels)
                 audio_data = audio_data.reshape((-1, 2))
                 sr = GLOBAL_SR
-                logger.info(f"Successfully converted pydub segment to NumPy array. Shape: {audio_data.shape}")
+                logger.info(
+                    f"Successfully converted pydub segment to NumPy array. Shape: {audio_data.shape}"
+                )
 
             except Exception as e_pydub:
-                logger.warning(f"pydub failed to load '{file_name}': {e_pydub}. Falling back to librosa.")
+                logger.warning(
+                    f"pydub failed to load '{file_name}': {e_pydub}. Falling back to librosa."
+                )
                 audio_data = None  # Ensure reset before trying librosa
                 sr = None
                 # Seek back to the beginning of the file for librosa
@@ -258,26 +304,36 @@ class WizardAudioProcessor:
         # --- Attempt 2: Use librosa (for non-MP3 or if pydub failed/unavailable) ---
         if audio_data is None:
             if not SOUNDFILE_AVAILABLE and file_ext != ".wav":
-                logger.error(f"Cannot load '{file_name}' with librosa: soundfile library missing or format potentially unsupported without it.")
+                logger.error(
+                    f"Cannot load '{file_name}' with librosa: soundfile library missing or format potentially unsupported without it."
+                )
                 # Optionally try audioread backend if installed? For now, fail.
                 return None
 
             logger.info(f"Attempting load with librosa for '{file_name}'...")
             try:
                 # Librosa can often handle file-like objects directly
-                audio_data, sr_native = librosa.load(uploaded_file, sr=GLOBAL_SR, mono=False)
+                audio_data, sr_native = librosa.load(
+                    uploaded_file, sr=GLOBAL_SR, mono=False
+                )
                 # Librosa loads as (channels, samples) if stereo, need (samples, channels)
                 if audio_data.ndim == 2 and audio_data.shape[0] == 2:
                     audio_data = audio_data.T
                 sr = GLOBAL_SR  # We requested this sample rate
-                logger.info(f"Librosa loaded '{file_name}'. Original SR: {sr_native}, Target SR: {sr}. Shape before processing: {audio_data.shape}")
+                logger.info(
+                    f"Librosa loaded '{file_name}'. Original SR: {sr_native}, Target SR: {sr}. Shape before processing: {audio_data.shape}"
+                )
 
             except (sf.LibsndfileError, RuntimeError, Exception) as e_librosa:
                 # Catch specific soundfile errors and general runtime errors
                 logger.error(f"Librosa failed to load '{file_name}': {e_librosa}")
                 # Check if it was the specific "Format not recognised" error
-                if isinstance(e_librosa, sf.LibsndfileError) and "Format not recognised" in str(e_librosa):
-                    logger.error("This often means libsndfile lacks support for this format (e.g., MP3). Try installing ffmpeg and using pydub.")
+                if isinstance(
+                    e_librosa, sf.LibsndfileError
+                ) and "Format not recognised" in str(e_librosa):
+                    logger.error(
+                        "This often means libsndfile lacks support for this format (e.g., MP3). Try installing ffmpeg and using pydub."
+                    )
                 return None  # Failed to load
 
         # --- Final Processing and Validation ---
@@ -285,20 +341,30 @@ class WizardAudioProcessor:
             try:
                 # Ensure stereo float32 for consistency downstream
                 processed_audio = self._ensure_float32(self._ensure_stereo(audio_data))
-                logger.info(f"Successfully loaded and processed '{file_name}'. Final Shape: {processed_audio.shape}, SR: {sr}")
+                logger.info(
+                    f"Successfully loaded and processed '{file_name}'. Final Shape: {processed_audio.shape}, SR: {sr}"
+                )
                 return (processed_audio, sr)
             except (TypeError, ValueError) as e_process:
-                logger.error(f"Error during final processing (stereo/float32) of '{file_name}': {e_process}")
+                logger.error(
+                    f"Error during final processing (stereo/float32) of '{file_name}': {e_process}"
+                )
                 return None
         else:
             # Should not happen if loading succeeded, but as a safeguard
-            logger.error(f"Loading failed for '{file_name}' for unknown reasons after load attempts.")
+            logger.error(
+                f"Loading failed for '{file_name}' for unknown reasons after load attempts."
+            )
             return None
 
-    def generate_noise_audio(self, noise_type: str, duration_seconds: float, sr: int) -> AudioTuple:
+    def generate_noise_audio(
+        self, noise_type: str, duration_seconds: float, sr: int
+    ) -> AudioTuple:
         """Generates stereo noise audio."""
         if noise_type not in NOISE_TYPES or duration_seconds <= 0:
-            logger.warning(f"Invalid parameters for noise generation: type={noise_type}, duration={duration_seconds}")
+            logger.warning(
+                f"Invalid parameters for noise generation: type={noise_type}, duration={duration_seconds}"
+            )
             return None
         logger.info(f"Generating {noise_type} for {duration_seconds:.2f}s at {sr} Hz.")
         num_samples = int(duration_seconds * sr)
@@ -349,7 +415,9 @@ class WizardAudioProcessor:
         """Generates stereo frequency-based audio (Binaural/Isochronic)."""
         if freq_choice == "None" or duration_seconds <= 0:
             return None  # No frequency requested or zero duration
-        logger.info(f"Generating {freq_choice} for {duration_seconds:.2f}s at {sr} Hz with params: {freq_params}")
+        logger.info(
+            f"Generating {freq_choice} for {duration_seconds:.2f}s at {sr} Hz with params: {freq_params}"
+        )
         num_samples = int(duration_seconds * sr)
         if num_samples <= 0:
             return None
@@ -374,7 +442,9 @@ class WizardAudioProcessor:
                 left_channel = 0.5 * np.sin(2 * np.pi * f_left * t)  # Amplitude 0.5
                 right_channel = 0.5 * np.sin(2 * np.pi * f_right * t)
                 # Stack into stereo float32 array
-                audio_result = np.stack([left_channel, right_channel], axis=-1).astype(np.float32)
+                audio_result = np.stack([left_channel, right_channel], axis=-1).astype(
+                    np.float32
+                )
 
             elif freq_choice == "Isochronic Tones":
                 pulse_freq = float(freq_params.get("pulse_freq", 7.0))  # Default 7Hz
@@ -386,7 +456,10 @@ class WizardAudioProcessor:
                 # This creates pulses by turning the tone on/off
                 pulse_period_samples = sr / pulse_freq
                 # Simple square wave: on for first half of period, off for second
-                modulation = (np.mod(np.arange(num_samples), pulse_period_samples) < (pulse_period_samples / 2)).astype(np.float32)
+                modulation = (
+                    np.mod(np.arange(num_samples), pulse_period_samples)
+                    < (pulse_period_samples / 2)
+                ).astype(np.float32)
                 # Apply modulation to tone, scale amplitude
                 mono_iso_tone = 0.8 * tone * modulation  # Amplitude 0.8
                 # Stack into stereo float32 array
@@ -401,7 +474,9 @@ class WizardAudioProcessor:
                 return (audio_result, sr)
             else:
                 # Should not happen if logic is correct, but safeguard
-                logger.error(f"Frequency generation failed unexpectedly for {freq_choice}.")
+                logger.error(
+                    f"Frequency generation failed unexpectedly for {freq_choice}."
+                )
                 return None
 
         except Exception as e:
@@ -413,17 +488,23 @@ class WizardAudioProcessor:
                 gc.collect()
 
     # --- Track Preparation & Mixing Methods ---
-    def _prepare_audio_track(self, audio_tuple: AudioTuple, target_length: int, track_name: str) -> AudioTuple:
+    def _prepare_audio_track(
+        self, audio_tuple: AudioTuple, target_length: int, track_name: str
+    ) -> AudioTuple:
         """Prepares a single audio track for mixing (ensures SR, stereo, length)."""
         if audio_tuple is None:
-            logger.debug(f"Skipping preparation for {track_name}: No audio tuple provided.")
+            logger.debug(
+                f"Skipping preparation for {track_name}: No audio tuple provided."
+            )
             return None
         audio_data, sr = audio_tuple
 
         # Validate sample rate
         if sr != GLOBAL_SR:
             # This should ideally not happen if loading/generation enforces GLOBAL_SR
-            logger.warning(f"Skipping {track_name}: Sample rate mismatch ({sr} Hz vs expected {GLOBAL_SR} Hz). Resampling not implemented here.")
+            logger.warning(
+                f"Skipping {track_name}: Sample rate mismatch ({sr} Hz vs expected {GLOBAL_SR} Hz). Resampling not implemented here."
+            )
             return None
 
         # Validate data
@@ -437,14 +518,20 @@ class WizardAudioProcessor:
             processed_audio = self._loop_audio_to_length(processed_audio, target_length)
 
             if processed_audio.size == 0:
-                logger.warning(f"Skipping {track_name}: Audio became empty after processing (looping/truncating). Target length: {target_length}")
+                logger.warning(
+                    f"Skipping {track_name}: Audio became empty after processing (looping/truncating). Target length: {target_length}"
+                )
                 return None
 
-            logger.debug(f"{track_name} prepared. Target Samples: {target_length}, Actual Samples: {processed_audio.shape[0]}, dtype: {processed_audio.dtype}.")
+            logger.debug(
+                f"{track_name} prepared. Target Samples: {target_length}, Actual Samples: {processed_audio.shape[0]}, dtype: {processed_audio.dtype}."
+            )
             return (processed_audio, GLOBAL_SR)
 
         except (TypeError, ValueError) as e:
-            logger.warning(f"Skipping {track_name} due to error during preparation: {e}")
+            logger.warning(
+                f"Skipping {track_name} due to error during preparation: {e}"
+            )
             return None
 
     def generate_preview_mix(
@@ -462,19 +549,29 @@ class WizardAudioProcessor:
 
         try:
             # 1. Validate and Process Affirmations (Required)
-            if affirmation_audio_tuple is None or not isinstance(affirmation_audio_tuple[0], np.ndarray) or affirmation_audio_tuple[0].size == 0:
+            if (
+                affirmation_audio_tuple is None
+                or not isinstance(affirmation_audio_tuple[0], np.ndarray)
+                or affirmation_audio_tuple[0].size == 0
+            ):
                 raise ValueError("Invalid or missing affirmation audio for preview.")
 
             affirmation_audio, affirmation_sr = affirmation_audio_tuple
             if affirmation_sr != GLOBAL_SR:
-                raise ValueError(f"Affirmation SR incorrect ({affirmation_sr} Hz). Cannot mix.")
+                raise ValueError(
+                    f"Affirmation SR incorrect ({affirmation_sr} Hz). Cannot mix."
+                )
 
             # Ensure stereo float32 and apply speed change if requested
-            processed_affirmation_audio = self._ensure_float32(self._ensure_stereo(affirmation_audio))
+            processed_affirmation_audio = self._ensure_float32(
+                self._ensure_stereo(affirmation_audio)
+            )
             apply_speed = wizard_state.get(AFFIRM_APPLY_SPEED_KEY, DEFAULT_APPLY_SPEED)
             speed_factor = wizard_state.get("wizard_speed_factor", 1.0)
             if apply_speed:
-                processed_affirmation_audio = self._apply_speed_change(processed_affirmation_audio, affirmation_sr, speed_factor)
+                processed_affirmation_audio = self._apply_speed_change(
+                    processed_affirmation_audio, affirmation_sr, speed_factor
+                )
 
             # 2. Get Volumes
             affirmation_volume: float = wizard_state.get(AFFIRMATION_VOLUME_KEY, 1.0)
@@ -485,19 +582,29 @@ class WizardAudioProcessor:
             # Use the minimum of requested duration and actual affirmation length
             target_preview_samples = int(duration_seconds * GLOBAL_SR)
             actual_affirmation_samples = processed_affirmation_audio.shape[0]
-            preview_length_samples = min(target_preview_samples, actual_affirmation_samples)
+            preview_length_samples = min(
+                target_preview_samples, actual_affirmation_samples
+            )
 
             if preview_length_samples <= 0:
                 raise ValueError("Calculated preview length is zero or negative.")
-            logger.info(f"Preview target length: {preview_length_samples / GLOBAL_SR:.2f}s ({preview_length_samples} samples).")
+            logger.info(
+                f"Preview target length: {preview_length_samples / GLOBAL_SR:.2f}s ({preview_length_samples} samples)."
+            )
 
             # 4. Prepare Tracks to Preview Length
             affirmation_preview_tuple = (
-                processed_affirmation_audio[:preview_length_samples],  # Truncate affirmations
+                processed_affirmation_audio[
+                    :preview_length_samples
+                ],  # Truncate affirmations
                 GLOBAL_SR,
             )
-            background_preview_tuple = self._prepare_audio_track(background_audio_tuple, preview_length_samples, "Background (Preview)")
-            frequency_preview_tuple = self._prepare_audio_track(frequency_audio_tuple, preview_length_samples, "Frequency (Preview)")
+            background_preview_tuple = self._prepare_audio_track(
+                background_audio_tuple, preview_length_samples, "Background (Preview)"
+            )
+            frequency_preview_tuple = self._prepare_audio_track(
+                frequency_audio_tuple, preview_length_samples, "Frequency (Preview)"
+            )
 
             # 5. Mix Tracks using the dedicated mixer function
             logger.info("Mixing preview tracks...")
@@ -512,10 +619,16 @@ class WizardAudioProcessor:
             )
 
             # 6. Validate Mix Result
-            if preview_mix is None or not isinstance(preview_mix, np.ndarray) or preview_mix.size == 0:
+            if (
+                preview_mix is None
+                or not isinstance(preview_mix, np.ndarray)
+                or preview_mix.size == 0
+            ):
                 raise ValueError("Preview mixing failed or resulted in empty audio.")
 
-            logger.info(f"Preview mixing successful. Length: {len(preview_mix) / GLOBAL_SR:.2f}s.")
+            logger.info(
+                f"Preview mixing successful. Length: {len(preview_mix) / GLOBAL_SR:.2f}s."
+            )
             return (self._ensure_float32(preview_mix), GLOBAL_SR)  # Ensure float32
 
         except Exception as e_preview:
@@ -545,19 +658,29 @@ class WizardAudioProcessor:
 
         try:
             # 1. Validate and Process Affirmations (Required)
-            if affirmation_audio_tuple is None or not isinstance(affirmation_audio_tuple[0], np.ndarray) or affirmation_audio_tuple[0].size == 0:
+            if (
+                affirmation_audio_tuple is None
+                or not isinstance(affirmation_audio_tuple[0], np.ndarray)
+                or affirmation_audio_tuple[0].size == 0
+            ):
                 raise ValueError("Invalid or missing affirmation audio for export.")
 
             affirmation_audio, affirmation_sr = affirmation_audio_tuple
             if affirmation_sr != GLOBAL_SR:
-                raise ValueError(f"Affirmation SR incorrect ({affirmation_sr} Hz). Cannot mix.")
+                raise ValueError(
+                    f"Affirmation SR incorrect ({affirmation_sr} Hz). Cannot mix."
+                )
 
             # Ensure stereo float32 and apply speed change
-            processed_affirmation_audio = self._ensure_float32(self._ensure_stereo(affirmation_audio))
+            processed_affirmation_audio = self._ensure_float32(
+                self._ensure_stereo(affirmation_audio)
+            )
             apply_speed = wizard_state.get(AFFIRM_APPLY_SPEED_KEY, DEFAULT_APPLY_SPEED)
             speed_factor = wizard_state.get("wizard_speed_factor", 1.0)
             if apply_speed:
-                processed_affirmation_audio = self._apply_speed_change(processed_affirmation_audio, affirmation_sr, speed_factor)
+                processed_affirmation_audio = self._apply_speed_change(
+                    processed_affirmation_audio, affirmation_sr, speed_factor
+                )
 
             # 2. Get Settings
             affirmation_volume: float = wizard_state.get(AFFIRMATION_VOLUME_KEY, 1.0)
@@ -569,16 +692,25 @@ class WizardAudioProcessor:
             target_length_samples = processed_affirmation_audio.shape[0]
             if target_length_samples == 0:
                 raise ValueError("Affirmation audio has zero length after processing.")
-            logger.info(f"Target mix length: {target_length_samples / GLOBAL_SR:.2f}s ({target_length_samples} samples).")
+            logger.info(
+                f"Target mix length: {target_length_samples / GLOBAL_SR:.2f}s ({target_length_samples} samples)."
+            )
 
             # 4. Prepare Tracks to Final Length
-            affirmation_final_tuple: AudioTuple = (processed_affirmation_audio, GLOBAL_SR)
+            affirmation_final_tuple: AudioTuple = (
+                processed_affirmation_audio,
+                GLOBAL_SR,
+            )
             # Don't need affirmation_final_tuple after this, free memory early
             processed_affirmation_audio = None
             gc.collect()
 
-            background_final_tuple = self._prepare_audio_track(background_audio_tuple, target_length_samples, "Background (Final)")
-            frequency_final_tuple = self._prepare_audio_track(frequency_audio_tuple, target_length_samples, "Frequency (Final)")
+            background_final_tuple = self._prepare_audio_track(
+                background_audio_tuple, target_length_samples, "Background (Final)"
+            )
+            frequency_final_tuple = self._prepare_audio_track(
+                frequency_audio_tuple, target_length_samples, "Frequency (Final)"
+            )
 
             # 5. Mix Tracks
             logger.info("Mixing final tracks...")
@@ -597,16 +729,24 @@ class WizardAudioProcessor:
             gc.collect()
 
             # Validate mix result
-            if full_mix is None or not isinstance(full_mix, np.ndarray) or full_mix.size == 0:
+            if (
+                full_mix is None
+                or not isinstance(full_mix, np.ndarray)
+                or full_mix.size == 0
+            ):
                 raise ValueError("Final mixing failed or resulted in empty audio.")
 
             full_mix = self._ensure_float32(full_mix)  # Ensure float32 before export
-            logger.info(f"Final mixing successful. Length: {len(full_mix) / GLOBAL_SR:.2f}s.")
+            logger.info(
+                f"Final mixing successful. Length: {len(full_mix) / GLOBAL_SR:.2f}s."
+            )
 
             # 6. Export to Buffer
             logger.info(f"Exporting final mix as {export_format.upper()}...")
             if export_format == "wav":
-                export_buffer = save_audio_to_bytesio(full_mix, GLOBAL_SR)  # WAV default
+                export_buffer = save_audio_to_bytesio(
+                    full_mix, GLOBAL_SR
+                )  # WAV default
                 if not export_buffer or export_buffer.getbuffer().nbytes == 0:
                     error_message = "Failed to save WAV (empty buffer)."
                     export_buffer = None
@@ -618,7 +758,9 @@ class WizardAudioProcessor:
                     logger.error(error_message)
                 else:
                     try:
-                        logger.info("Converting final mix (float32) to MP3 using pydub...")
+                        logger.info(
+                            "Converting final mix (float32) to MP3 using pydub..."
+                        )
                         # Convert float32 [-1.0, 1.0] to int16 for pydub
                         # Clip first to prevent wrap-around issues with large floats
                         full_mix_clipped = np.clip(full_mix, -1.0, 1.0)
@@ -650,7 +792,9 @@ class WizardAudioProcessor:
                             logger.info("MP3 buffer generated successfully.")
                             export_buffer = mp3_buffer
                         else:
-                            error_message = "MP3 export failed (pydub created empty buffer)."
+                            error_message = (
+                                "MP3 export failed (pydub created empty buffer)."
+                            )
                             logger.error(error_message)
 
                     except Exception as e_mp3:
@@ -663,7 +807,9 @@ class WizardAudioProcessor:
                             del audio_int16
                         gc.collect()
             else:
-                error_message = f"Unsupported export format requested: '{export_format}'."
+                error_message = (
+                    f"Unsupported export format requested: '{export_format}'."
+                )
                 logger.error(error_message)
 
         except Exception as e_export:
@@ -671,7 +817,10 @@ class WizardAudioProcessor:
             error_message = f"Unexpected Processing Error: {e_export}"
             export_buffer = None  # Ensure buffer is None on error
             # Cleanup potentially large arrays if an error occurred mid-process
-            if "processed_affirmation_audio" in locals() and processed_affirmation_audio is not None:
+            if (
+                "processed_affirmation_audio" in locals()
+                and processed_affirmation_audio is not None
+            ):
                 del processed_affirmation_audio
             if "full_mix" in locals() and full_mix is not None:
                 del full_mix

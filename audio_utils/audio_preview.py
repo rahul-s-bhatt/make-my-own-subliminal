@@ -1,77 +1,71 @@
 # audio_preview.py
 # ==========================================
 # Generates audio previews for the Advanced Editor tracks.
-# (No caching added here; relies on caching in called functions)
+# STEP 3 OPTIMIZED: Modified get_preview_audio to accept raw snippet and SR.
 # ==========================================
 
 import logging
 from typing import TYPE_CHECKING, Optional
 
 import numpy as np
-import streamlit as st  # Import for consistency, though not used for caching here
 
-# Import the effects pipeline (relies on cached effects)
 from audio_utils.audio_effects_pipeline import apply_all_effects
 
-# Import constants and types
-from config import GLOBAL_SR, PREVIEW_DURATION_S
+# --- MODIFIED: Added SampleRate ---
+from audio_utils.audio_state_definitions import AudioData, SampleRate
+from config import GLOBAL_SR, PREVIEW_DURATION_S  # Use config default
 
-# Define type hints used within this module
-AudioData = np.ndarray
 if TYPE_CHECKING:
-    try:
-        # Assuming TrackDataDict might be defined elsewhere, e.g., app_state
-        from app_state import TrackDataDict
-    except ImportError:
-        # Fallback if TrackDataDict isn't easily importable or defined centrally
-        from typing import Any, Dict
+    from app_state import TrackDataDict  # Keep this
 
-        TrackDataDict = Dict[str, Any]
-
-
-# Get a logger for this module
 logger = logging.getLogger(__name__)
 
 
-# No caching added - relies on cached apply_all_effects
+# --- MODIFIED: Function Signature and Logic ---
 def get_preview_audio(
-    track_data: "TrackDataDict", preview_duration_s: int = PREVIEW_DURATION_S
+    raw_snippet: Optional[AudioData],
+    sr: Optional[SampleRate],
+    track_data: "TrackDataDict",  # Still need track_data for effects settings
+    preview_duration_s: int = PREVIEW_DURATION_S,
 ) -> Optional[AudioData]:
     """
-    Generates a preview of the track using its snippet with effects, volume, and pan applied.
-    Relies on caching within apply_all_effects (via cached individual effects).
+    Generates a *processed* preview (with effects, vol, pan) from a raw audio snippet.
+    Relies on caching within apply_all_effects.
 
     Args:
-        track_data: Dictionary containing track settings and the audio snippet.
+        raw_snippet: The raw audio data snippet (NumPy array).
+        sr: The sample rate of the raw snippet.
+        track_data: Dictionary containing track settings (effects, vol, pan, etc.).
         preview_duration_s: The maximum duration of the preview in seconds.
 
     Returns:
         The processed preview audio data, or None if generation fails or input is invalid.
     """
     track_name = track_data.get("name", "N/A")
-    track_id = track_data.get("track_id", "N/A")  # Use track_id if available
-    log_prefix = f"Preview for '{track_name}' ({track_id})"
-    logger.info(f"{log_prefix}: Generating preview (max {preview_duration_s}s)")
+    track_id = track_data.get("id", "N/A")  # Use track_id from track_data
+    log_prefix = f"Processed Preview for '{track_name}' ({track_id[-6:]})"
+    logger.info(
+        f"{log_prefix}: Generating processed preview (max {preview_duration_s}s)"
+    )
 
-    audio_snippet = track_data.get("audio_snippet")
-    sr = track_data.get("sr", GLOBAL_SR)
-
-    if audio_snippet is None or audio_snippet.size == 0:
+    # Use the passed-in raw_snippet and sr
+    if raw_snippet is None or raw_snippet.size == 0:
         logger.warning(
-            f"{log_prefix}: No audio snippet found. Cannot generate preview."
+            f"{log_prefix}: No raw audio snippet provided. Cannot generate preview."
         )
         return None
-    if sr <= 0:
+    if sr is None or sr <= 0:
         logger.warning(
             f"{log_prefix}: Invalid sample rate ({sr}). Cannot generate preview."
         )
         return None
 
     try:
-        # Apply all effects (Reverse, Speed, Pitch/Ultrasonic, Filter) to the snippet
+        # Apply all effects (Reverse, Speed, Pitch/Ultrasonic, Filter) to the raw snippet
         # This function uses cached individual effect functions internally
-        logger.debug(f"{log_prefix}: Applying effects to snippet.")
-        processed_preview = apply_all_effects(track_data, audio_segment=audio_snippet)
+        logger.debug(f"{log_prefix}: Applying effects to raw snippet.")
+        # Pass the raw snippet directly to the effects pipeline
+        processed_preview = apply_all_effects(track_data, audio_segment=raw_snippet)
 
         if processed_preview is None or processed_preview.size == 0:
             logger.warning(
@@ -79,11 +73,10 @@ def get_preview_audio(
             )
             return None
 
-        # Determine Preview Length after Effects
+        # --- Duration handling (Loop/Truncate/Pad) remains the same ---
         target_preview_samples = int(sr * preview_duration_s)
         current_processed_len = len(processed_preview)
 
-        # Loop snippet if needed and possible
         if (
             track_data.get("loop_to_fit", False)
             and current_processed_len > 0
@@ -104,9 +97,9 @@ def get_preview_audio(
                 )
             except ValueError as e_concat:
                 logger.error(
-                    f"{log_prefix}: Error concatenating looped preview: {e_concat}. Using non-looped."
+                    f"{log_prefix}: Error concatenating looped preview: {e_concat}. Using non-looped/padded."
                 )
-                # Fallback to padding/truncating original processed snippet
+                # Fallback padding/truncating
                 if len(processed_preview) > target_preview_samples:
                     processed_preview = processed_preview[:target_preview_samples]
                 elif len(processed_preview) < target_preview_samples:
@@ -116,13 +109,12 @@ def get_preview_audio(
                         mode="constant",
                     )
 
-        # Truncate if longer than target (handles non-looped or failed loop cases)
+        # Truncate/Pad if needed (handles non-looped or failed loops)
         if len(processed_preview) > target_preview_samples:
             logger.debug(
                 f"{log_prefix}: Truncating preview to {target_preview_samples} samples."
             )
             processed_preview = processed_preview[:target_preview_samples]
-        # Pad if shorter than target (handles non-looped short snippets or failed loops)
         elif len(processed_preview) < target_preview_samples:
             logger.debug(
                 f"{log_prefix}: Padding preview to {target_preview_samples} samples."
@@ -133,22 +125,19 @@ def get_preview_audio(
                 mode="constant",
             )
 
-        # Apply Volume and Pan
+        # --- Apply Volume and Pan (Remains the same) ---
         vol = track_data.get("volume", 1.0)
         pan = track_data.get("pan", 0.0)
         logger.debug(f"{log_prefix}: Applying Volume ({vol:.2f}) / Pan ({pan:.2f}).")
-
-        pan_rad = (pan + 1.0) * np.pi / 4.0  # Map [-1, 1] to [0, pi/2]
+        pan_rad = (pan + 1.0) * np.pi / 4.0
         left_gain = vol * np.cos(pan_rad)
         right_gain = vol * np.sin(pan_rad)
 
-        # Ensure stereo before applying gains
         if processed_preview.ndim == 1:
             logger.warning(
                 f"{log_prefix}: Preview is mono after effects. Applying vol, pan ignored."
             )
-            processed_preview *= vol  # Apply overall volume
-            # Convert to stereo for consistent output shape
+            processed_preview *= vol
             processed_preview = np.stack([processed_preview, processed_preview], axis=1)
         elif processed_preview.shape[1] == 2:
             processed_preview[:, 0] *= left_gain
@@ -157,17 +146,14 @@ def get_preview_audio(
             logger.warning(
                 f"{log_prefix}: Unexpected shape {processed_preview.shape}. Cannot apply vol/pan."
             )
-            # Attempt to apply volume to first channel as fallback? Or just skip?
-            # Skipping might be safer.
-            pass  # Skip applying vol/pan if shape is wrong
 
         # Final clip and type check
         processed_preview = np.clip(processed_preview, -1.0, 1.0)
         logger.debug(
-            f"{log_prefix}: Preview generation complete. Final shape: {processed_preview.shape}"
+            f"{log_prefix}: Processed preview generation complete. Final shape: {processed_preview.shape}"
         )
         return processed_preview.astype(np.float32)
 
     except Exception as e:
-        logger.exception(f"{log_prefix}: Error generating preview.")
+        logger.exception(f"{log_prefix}: Error generating processed preview.")
         return None

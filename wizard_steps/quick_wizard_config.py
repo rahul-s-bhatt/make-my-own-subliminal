@@ -9,11 +9,15 @@
 # General
 WIZARD_STEP_KEY = "wizard_step"
 WIZARD_PROCESSING_ACTIVE_KEY = "wizard_processing_active"  # For final export
-WIZARD_PREVIEW_ACTIVE_KEY = "wizard_preview_active"  # For preview generation <--- NEW KEY
+WIZARD_PREVIEW_ACTIVE_KEY = (
+    "wizard_preview_active"  # For preview generation <--- NEW KEY
+)
 
 # Step 1: Affirmations
 AFFIRMATION_TEXT_KEY = "wizard_affirmation_text"
-AFFIRMATION_SOURCE_KEY = "wizard_affirmation_source"  # Though currently hardcoded to 'text'
+AFFIRMATION_SOURCE_KEY = (
+    "wizard_affirmation_source"  # Though currently hardcoded to 'text'
+)
 AFFIRM_APPLY_SPEED_KEY = "wizard_apply_speed_change"  # Boolean flag for speed change
 AFFIRMATION_VOLUME_KEY = "wizard_affirmation_volume"
 
@@ -25,7 +29,9 @@ BG_NOISE_TYPE_KEY = "wizard_background_noise_type"  # String name of noise
 BG_VOLUME_KEY = "wizard_background_volume"
 
 # Step 3: Frequency
-FREQ_CHOICE_KEY = "wizard_frequency_choice"  # 'None', 'Binaural Beats', 'Isochronic Tones'
+FREQ_CHOICE_KEY = (
+    "wizard_frequency_choice"  # 'None', 'Binaural Beats', 'Isochronic Tones'
+)
 FREQ_PARAMS_KEY = "wizard_frequency_params"  # Dict storing parameters
 FREQ_VOLUME_KEY = "wizard_frequency_volume"
 

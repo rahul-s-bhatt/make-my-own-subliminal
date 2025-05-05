@@ -12,33 +12,58 @@ import streamlit as st
 # Import constants from the central config file
 # Ensures consistency and avoids magic strings
 from .quick_wizard_config import (
-    AFFIRM_APPLY_SPEED_KEY,  # State key for speed change checkbox
-    AFFIRMATION_TEXT_KEY,  # State key for affirmation text
-    AFFIRMATION_VOLUME_KEY,  # State key for affirmation volume slider
-    BG_CHOICE_KEY,  # State key for background choice ('none', 'upload', 'noise')
-    BG_NOISE_TYPE_KEY,  # State key for selected noise type
-    BG_UPLOADED_FILE_KEY,  # State key for the uploaded background file object
-    BG_VOLUME_KEY,  # State key for background volume slider
-    DEFAULT_APPLY_SPEED,  # Default value for speed change
-    EXPORT_BUFFER_KEY,  # State key for the final exported audio buffer
-    EXPORT_ERROR_KEY,  # State key for storing export errors
-    EXPORT_FORMAT_KEY,  # State key for selected export format ('WAV', 'MP3')
-    EXPORT_FORMATS,  # List like ['WAV', 'MP3']
-    FREQ_CHOICE_KEY,  # State key for frequency choice ('None', 'Binaural', ...)
-    FREQ_PARAMS_KEY,  # State key for frequency parameters dictionary
-    FREQ_VOLUME_KEY,  # State key for frequency volume slider
-    OUTPUT_FILENAME_KEY,  # State key for the desired output filename
-    PREVIEW_BUFFER_KEY,  # State key for the preview audio buffer
-    PREVIEW_ERROR_KEY,  # State key for storing preview errors
-    WIZARD_PREVIEW_ACTIVE_KEY,  # State key (boolean) indicating if PREVIEW processing is ongoing <--- IMPORTED
-    WIZARD_PROCESSING_ACTIVE_KEY,  # State key (boolean) indicating if EXPORT processing is ongoing
-)
+    AFFIRM_APPLY_SPEED_KEY,
+)  # State key for speed change checkbox
+from .quick_wizard_config import AFFIRMATION_TEXT_KEY  # State key for affirmation text
+from .quick_wizard_config import (
+    AFFIRMATION_VOLUME_KEY,
+)  # State key for affirmation volume slider
+from .quick_wizard_config import (
+    BG_CHOICE_KEY,
+)  # State key for background choice ('none', 'upload', 'noise')
+from .quick_wizard_config import BG_NOISE_TYPE_KEY  # State key for selected noise type
+from .quick_wizard_config import (
+    BG_UPLOADED_FILE_KEY,
+)  # State key for the uploaded background file object
+from .quick_wizard_config import BG_VOLUME_KEY  # State key for background volume slider
+from .quick_wizard_config import DEFAULT_APPLY_SPEED  # Default value for speed change
+from .quick_wizard_config import (
+    EXPORT_BUFFER_KEY,
+)  # State key for the final exported audio buffer
+from .quick_wizard_config import EXPORT_ERROR_KEY  # State key for storing export errors
+from .quick_wizard_config import (
+    EXPORT_FORMAT_KEY,
+)  # State key for selected export format ('WAV', 'MP3')
+from .quick_wizard_config import EXPORT_FORMATS  # List like ['WAV', 'MP3']
+from .quick_wizard_config import (
+    FREQ_CHOICE_KEY,
+)  # State key for frequency choice ('None', 'Binaural', ...)
+from .quick_wizard_config import (
+    FREQ_PARAMS_KEY,
+)  # State key for frequency parameters dictionary
+from .quick_wizard_config import (
+    FREQ_VOLUME_KEY,
+)  # State key for frequency volume slider
+from .quick_wizard_config import (
+    OUTPUT_FILENAME_KEY,
+)  # State key for the desired output filename
+from .quick_wizard_config import (
+    PREVIEW_BUFFER_KEY,
+)  # State key for the preview audio buffer
+from .quick_wizard_config import (
+    PREVIEW_ERROR_KEY,
+)  # State key for storing preview errors
+from .quick_wizard_config import (
+    WIZARD_PREVIEW_ACTIVE_KEY,
+)  # State key (boolean) indicating if PREVIEW processing is ongoing <--- IMPORTED
+from .quick_wizard_config import (
+    WIZARD_PROCESSING_ACTIVE_KEY,
+)  # State key (boolean) indicating if EXPORT processing is ongoing
 
 # Import necessary components (or assume they exist)
 try:
     # Assuming audio_io functionality (like saving) is available elsewhere
     # from audio_utils.audio_io import ...
-    pass
     AUDIO_IO_AVAILABLE = True  # Assume available for simplicity in this example
 except ImportError:
     AUDIO_IO_AVAILABLE = False
@@ -48,7 +73,6 @@ except ImportError:
 try:
     # Assuming pydub check is handled by the audio processor or main app setup
     # from pydub import AudioSegment
-    pass
     PYDUB_AVAILABLE = True  # Assume available for simplicity
 except ImportError:
     PYDUB_AVAILABLE = False
@@ -68,7 +92,9 @@ def render_step_4(wizard):
                 and processing methods like generate_preview() and _reset_wizard_state().
     """
     st.subheader("Step 4: Review Settings, Mix & Export")
-    st.write("Review your selections, adjust final volume levels, generate a preview, and export your audio.")
+    st.write(
+        "Review your selections, adjust final volume levels, generate a preview, and export your audio."
+    )
 
     # --- Read Processing States ---
     # Read both flags at the start of the render function
@@ -85,9 +111,13 @@ def render_step_4(wizard):
     affirm_text = st.session_state.get(AFFIRMATION_TEXT_KEY, "").strip()
     affirmations_present = bool(affirm_text)  # Needed for disabling buttons
     speed_setting = st.session_state.get(AFFIRM_APPLY_SPEED_KEY, DEFAULT_APPLY_SPEED)
-    speed_indicator = " (Speed Change Enabled)" if speed_setting else " (Speed Change Disabled)"
+    speed_indicator = (
+        " (Speed Change Enabled)" if speed_setting else " (Speed Change Disabled)"
+    )
     if affirmations_present:
-        summary_data.append(f"- **Affirmations:** Text Input ('{affirm_text[:30].strip()}...'){speed_indicator}")
+        summary_data.append(
+            f"- **Affirmations:** Text Input ('{affirm_text[:30].strip()}...'){speed_indicator}"
+        )
     else:
         summary_data.append("- **Affirmations:** ⚠️ **MISSING** (Go back to Step 1)")
 
@@ -96,9 +126,13 @@ def render_step_4(wizard):
     if bg_choice == "upload":
         uploaded_file = st.session_state.get(BG_UPLOADED_FILE_KEY)
         if uploaded_file:
-            summary_data.append(f"- **Background:** Uploaded File ('{uploaded_file.name}')")
+            summary_data.append(
+                f"- **Background:** Uploaded File ('{uploaded_file.name}')"
+            )
         else:
-            summary_data.append("- **Background:** Upload Selected (⚠️ **File Missing?** Go back to Step 2)")
+            summary_data.append(
+                "- **Background:** Upload Selected (⚠️ **File Missing?** Go back to Step 2)"
+            )
     elif bg_choice == "noise":
         noise_type = st.session_state.get(BG_NOISE_TYPE_KEY, "N/A")
         summary_data.append(f"- **Background:** Generated Noise ('{noise_type}')")
@@ -109,7 +143,11 @@ def render_step_4(wizard):
     freq_choice = st.session_state.get(FREQ_CHOICE_KEY, "None")
     if freq_choice != "None":
         freq_params = st.session_state.get(FREQ_PARAMS_KEY, {})
-        params_str = ", ".join(f"{k.replace('_freq', '').capitalize()}={v}Hz" for k, v in freq_params.items() if v is not None)
+        params_str = ", ".join(
+            f"{k.replace('_freq', '').capitalize()}={v}Hz"
+            for k, v in freq_params.items()
+            if v is not None
+        )
         summary_data.append(f"- **Frequency:** {freq_choice} ({params_str})")
     else:
         summary_data.append("- **Frequency:** None")
@@ -164,10 +202,14 @@ def render_step_4(wizard):
 
     # --- Preview Section ---
     st.markdown("**Preview Mix:**")
-    st.caption(f"Generate a {PREVIEW_DURATION_SECONDS}-second preview of the mix with current settings.")
+    st.caption(
+        f"Generate a {PREVIEW_DURATION_SECONDS}-second preview of the mix with current settings."
+    )
 
     # Determine Preview Button State
-    preview_button_disabled = not affirmations_present or is_processing  # Disabled if no text OR if any processing active
+    preview_button_disabled = (
+        not affirmations_present or is_processing
+    )  # Disabled if no text OR if any processing active
     preview_tooltip = ""
     if is_previewing:
         preview_tooltip = "Preview generation in progress..."
@@ -178,7 +220,11 @@ def render_step_4(wizard):
     else:
         preview_tooltip = "Generate a short preview of the final mix."
 
-    preview_button_label = "⏳ Generating Preview..." if is_previewing else f"🎧 Generate Preview ({PREVIEW_DURATION_SECONDS}s)"
+    preview_button_label = (
+        "⏳ Generating Preview..."
+        if is_previewing
+        else f"🎧 Generate Preview ({PREVIEW_DURATION_SECONDS}s)"
+    )
 
     # Preview Button
     if st.button(
@@ -261,7 +307,9 @@ def render_step_4(wizard):
 
     # --- Generate Button ---
     # Determine Export Button State
-    export_button_disabled = not affirmations_present or is_processing  # Disabled if no text OR if any processing active
+    export_button_disabled = (
+        not affirmations_present or is_processing
+    )  # Disabled if no text OR if any processing active
     export_tooltip = ""
     if is_exporting:
         export_tooltip = "Final export in progress..."
@@ -277,7 +325,11 @@ def render_step_4(wizard):
         export_button_disabled = True  # Override other conditions
         export_tooltip = "MP3 format is unavailable. Please install required libraries or choose WAV."
 
-    export_button_label = "⏳ Processing Export..." if is_exporting else f"Generate & Prepare Download (. {st.session_state.get(EXPORT_FORMAT_KEY, 'WAV').lower()})"
+    export_button_label = (
+        "⏳ Processing Export..."
+        if is_exporting
+        else f"Generate & Prepare Download (. {st.session_state.get(EXPORT_FORMAT_KEY, 'WAV').lower()})"
+    )
 
     # The Generate Button itself
     if st.button(
@@ -309,7 +361,9 @@ def render_step_4(wizard):
     if export_buffer:
         # Sanitize filename
         raw_filename = st.session_state.get(OUTPUT_FILENAME_KEY, "mindmorph_quick_mix")
-        sanitized_filename = re.sub(r'[\\/*?:"<>|]', "", raw_filename).strip() or "mindmorph_quick_mix"
+        sanitized_filename = (
+            re.sub(r'[\\/*?:"<>|]', "", raw_filename).strip() or "mindmorph_quick_mix"
+        )
         file_ext = st.session_state.get(EXPORT_FORMAT_KEY, "WAV").lower()
         download_filename = f"{sanitized_filename}.{file_ext}"
         mime_type = f"audio/{file_ext}" if file_ext == "wav" else "audio/mpeg"
@@ -338,7 +392,9 @@ def render_step_4(wizard):
             logger.warning("Resetting export processing flag due to error display.")
         if st.session_state.get(WIZARD_PREVIEW_ACTIVE_KEY):  # Also check preview flag
             st.session_state[WIZARD_PREVIEW_ACTIVE_KEY] = False
-            logger.warning("Resetting preview processing flag due to export error display.")
+            logger.warning(
+                "Resetting preview processing flag due to export error display."
+            )
 
     # --- Navigation Buttons ---
     st.divider()

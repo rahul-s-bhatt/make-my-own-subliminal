@@ -17,7 +17,6 @@ from .quick_wizard_config import (
     BG_UPLOADED_FILE_KEY,
     DEFAULT_BG_CHOICE,
     DEFAULT_BG_CHOICE_LABEL,
-    DEFAULT_BG_UPLOADED_FILE,
     DEFAULT_NOISE_TYPE,
 )
 

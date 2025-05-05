@@ -1,6 +1,7 @@
 # sidebar_generators.py
 # ==========================================
 # Frequency and Noise Generation UI for MindMorph Sidebar
+# STEP 1 OPTIMIZED: Removed immediate snippet generation on track add.
 # ==========================================
 
 import logging
@@ -8,30 +9,20 @@ from typing import Optional
 
 import streamlit as st
 
-# Import necessary components from other modules
-from app_state import AppState  # Keep AppState import
-from audio_utils.audio_generators import (
-    generate_binaural_beats,
-    generate_isochronic_tones,
-    generate_noise,
-    generate_solfeggio_frequency,
-)
+from app_state import AppState
 
-# <<< MODIFIED: Import types from definitions file >>>
+# --- REMOVED: audio_generators imports (no longer needed here) ---
+# from audio_utils.audio_generators import (...)
 from audio_utils.audio_state_definitions import (
     AudioData,
-    SourceInfoFrequency,
-    SourceInfoNoise,
-)
+)  # Keep for type hints if needed elsewhere
+from audio_utils.audio_state_definitions import SourceInfoFrequency, SourceInfoNoise
 from config import (
     GENERATOR_SNIPPET_DURATION_S,
-    GLOBAL_SR,
-    MAX_TRACK_LIMIT,
-    TRACK_TYPE_BACKGROUND,
-    TRACK_TYPE_FREQUENCY,
-)
+)  # Keep for potential future use or reference
+from config import GLOBAL_SR  # Keep for potential future use or reference
+from config import MAX_TRACK_LIMIT, TRACK_TYPE_BACKGROUND, TRACK_TYPE_FREQUENCY
 
-# Get a logger for this module
 logger = logging.getLogger(__name__)
 
 
@@ -43,42 +34,34 @@ class SidebarGenerators:
         self.app_state = app_state
         logger.debug("SidebarGenerators initialized.")
 
-    # --- Check Track Limit Helper ---
     def _check_track_limit(self, adding_count: int = 1) -> bool:
         """Checks if adding tracks would exceed the limit."""
         current_count = len(self.app_state.get_all_tracks())
         if current_count + adding_count > MAX_TRACK_LIMIT:
-            logger.warning(
-                f"Track limit ({MAX_TRACK_LIMIT}) reached. Cannot add {adding_count} more track(s). Current count: {current_count}"
-            )
-            st.error(
-                f"Cannot add more tracks. Maximum limit of {MAX_TRACK_LIMIT} reached.",
-                icon="🚫",
-            )
+            logger.warning(f"Track limit ({MAX_TRACK_LIMIT}) reached.")
+            st.error(f"Cannot add more tracks. Limit: {MAX_TRACK_LIMIT}.", icon="🚫")
             return False
         return True
 
-    # --- Public Rendering Methods ---
-
     def render_frequency_generators(self):
         """Renders frequency/tone generation options based on app mode."""
+        # (UI Rendering remains the same)
         st.subheader("🧠✨ Add Frequencies / Tones")
         app_mode = st.session_state.get("app_mode", "Easy")
         limit_reached = len(self.app_state.get_all_tracks()) >= MAX_TRACK_LIMIT
         if limit_reached:
             st.warning(f"Track limit ({MAX_TRACK_LIMIT}) reached.", icon="⚠️")
 
-        if app_mode == "Easy":
-            available_gen_types = ["Presets"]
-            st.caption("Use presets for common frequency patterns.")
-        else:
-            available_gen_types = [
-                "Binaural Beats",
-                "Solfeggio Tones",
-                "Isochronic Tones",
-                "Presets",
-            ]
-            st.caption("Generate specific tones or use presets.")
+        available_gen_types = (
+            ["Presets"]
+            if app_mode == "Easy"
+            else ["Binaural Beats", "Solfeggio Tones", "Isochronic Tones", "Presets"]
+        )
+        st.caption(
+            "Use presets for common patterns."
+            if app_mode == "Easy"
+            else "Generate specific tones or use presets."
+        )
 
         gen_type_key = "sidebar_frequency_gen_type"
         default_gen_type = "Presets"
@@ -92,7 +75,7 @@ class SidebarGenerators:
         except ValueError:
             default_index = 0
         gen_type = st.radio(
-            "Select Frequency Type:",
+            "Select Type:",
             available_gen_types,
             index=default_index,
             key=gen_type_key,
@@ -112,6 +95,7 @@ class SidebarGenerators:
 
     def render_background_generators(self):
         """Renders options for generating background noise."""
+        # (UI Rendering remains the same)
         st.subheader("🎵 Add Background Noise")
         limit_reached = len(self.app_state.get_all_tracks()) >= MAX_TRACK_LIMIT
         if limit_reached:
@@ -134,44 +118,52 @@ class SidebarGenerators:
             help="Target length for final mix. Noise will loop.",
             disabled=limit_reached,
         )
+
+        # --- MODIFIED: Generate Button Logic ---
         if st.button(
-            f"Generate {noise_type} Track",
+            f"➕ Add {noise_type} Track",
             key="sidebar_generate_noise",
             disabled=limit_reached,
         ):
             if not self._check_track_limit(adding_count=1):
                 return
-            with st.spinner(f"Generating {noise_type} snippet..."):
-                audio_snippet = generate_noise(
-                    noise_type, GENERATOR_SNIPPET_DURATION_S, GLOBAL_SR, volume=1.0
-                )
-            if audio_snippet is not None and audio_snippet.size > 0:
-                source_info: SourceInfoNoise = {
-                    "type": "noise",
-                    "noise_type": noise_type,
-                    "target_duration_s": noise_duration_req,
-                }
-                initial_params = {
-                    "name": noise_type,
-                    "track_type": TRACK_TYPE_BACKGROUND,
-                    "loop_to_fit": True,
-                    "volume": 0.5,
-                }
-                new_track_id = self.app_state.add_track(
-                    audio_snippet=audio_snippet,
-                    source_info=source_info,
-                    sr=GLOBAL_SR,
-                    initial_params=initial_params,
-                )
-                st.success(f"'{noise_type}' track generated (ID: {new_track_id[:6]})!")
-                st.rerun()
-            elif audio_snippet is not None:
-                st.warning(f"Generated {noise_type} snippet was empty.")
-            else:
-                st.error(f"Failed to generate {noise_type}.")
 
-    # --- Private Rendering Methods ---
+            # --- REMOVED: Snippet generation ---
+            # with st.spinner(f"Generating {noise_type} snippet..."):
+            #     audio_snippet = generate_noise(...)
+
+            # --- Create SourceInfo and add track state ---
+            logger.info(f"Adding {noise_type} track state.")
+            source_info: SourceInfoNoise = {
+                "type": "noise",
+                "noise_type": noise_type,
+                "target_duration_s": noise_duration_req,
+            }
+            initial_params = {
+                "name": noise_type,
+                "track_type": TRACK_TYPE_BACKGROUND,
+                "loop_to_fit": True,
+                "volume": 0.5,  # Default volume for background
+            }
+            # Call app_state.add_track (New signature)
+            new_track_id = self.app_state.add_track(
+                source_info=source_info,
+                initial_params=initial_params,
+            )
+            if new_track_id:
+                st.success(
+                    f"'{noise_type}' track added (ID: {new_track_id[:6]}). Preview pending."
+                )
+                st.rerun()
+            else:
+                logger.error(f"Failed to add {noise_type} track state.")
+                st.error(
+                    f"Failed to add track for {noise_type}. Limit might be reached."
+                )
+            # --- End of modification ---
+
     def _render_frequency_presets(self, disabled: bool = False):
+        # (UI Rendering remains the same)
         st.markdown(
             "<small>Generate common frequency patterns.</small>", unsafe_allow_html=True
         )
@@ -224,79 +216,77 @@ class SidebarGenerators:
                 help="Initial volume.",
                 disabled=disabled,
             )
+
+        # --- MODIFIED: Generate Button Logic ---
         if st.button(
-            f"Generate '{preset_name}' Track",
+            f"➕ Add '{preset_name}' Track",
             key="sidebar_generate_preset",
             disabled=disabled,
         ):
             if not self._check_track_limit(adding_count=1):
                 return
-            with st.spinner(f"Generating {preset_name} snippet..."):
-                audio_snippet: Optional[AudioData] = None
-                source_info: Optional[SourceInfoFrequency] = None
-                gen_volume = 1.0
-                if preset_data["type"] == "binaural":
-                    audio_snippet = generate_binaural_beats(
-                        GENERATOR_SNIPPET_DURATION_S,
-                        preset_data["f_left"],
-                        preset_data["f_right"],
-                        GLOBAL_SR,
-                        gen_volume,
-                    )
-                    source_info = {
-                        "type": "frequency",
-                        "freq_type": "binaural",
-                        "f_left": preset_data["f_left"],
-                        "f_right": preset_data["f_right"],
-                        "target_duration_s": preset_duration_req,
-                        "freq": None,
-                        "carrier": None,
-                        "pulse": None,
-                    }
-                elif preset_data["type"] == "solfeggio":
-                    audio_snippet = generate_solfeggio_frequency(
-                        GENERATOR_SNIPPET_DURATION_S,
-                        preset_data["freq"],
-                        GLOBAL_SR,
-                        gen_volume,
-                    )
-                    source_info = {
-                        "type": "frequency",
-                        "freq_type": "solfeggio",
-                        "freq": preset_data["freq"],
-                        "target_duration_s": preset_duration_req,
-                        "f_left": None,
-                        "f_right": None,
-                        "carrier": None,
-                        "pulse": None,
-                    }
-                if (
-                    audio_snippet is not None
-                    and audio_snippet.size > 0
-                    and source_info is not None
-                ):
-                    initial_params = {
-                        "name": preset_name,
-                        "track_type": TRACK_TYPE_FREQUENCY,
-                        "loop_to_fit": True,
-                        "volume": preset_initial_vol,
-                    }
-                    new_track_id = self.app_state.add_track(
-                        audio_snippet=audio_snippet,
-                        source_info=source_info,
-                        sr=GLOBAL_SR,
-                        initial_params=initial_params,
-                    )
+
+            # --- REMOVED: Snippet generation ---
+            # with st.spinner(f"Generating {preset_name} snippet..."):
+            #     audio_snippet = None; source_info = None; gen_volume = 1.0
+            #     if preset_data["type"] == "binaural": audio_snippet = generate_binaural_beats(...)
+            #     elif preset_data["type"] == "solfeggio": audio_snippet = generate_solfeggio_frequency(...)
+
+            # --- Create SourceInfo and add track state ---
+            source_info: Optional[SourceInfoFrequency] = None
+            if preset_data["type"] == "binaural":
+                source_info = {
+                    "type": "frequency",
+                    "freq_type": "binaural",
+                    "f_left": preset_data["f_left"],
+                    "f_right": preset_data["f_right"],
+                    "target_duration_s": preset_duration_req,
+                    "freq": None,
+                    "carrier": None,
+                    "pulse": None,
+                }
+            elif preset_data["type"] == "solfeggio":
+                source_info = {
+                    "type": "frequency",
+                    "freq_type": "solfeggio",
+                    "freq": preset_data["freq"],
+                    "target_duration_s": preset_duration_req,
+                    "f_left": None,
+                    "f_right": None,
+                    "carrier": None,
+                    "pulse": None,
+                }
+
+            if source_info:
+                logger.info(f"Adding {preset_name} track state.")
+                initial_params = {
+                    "name": preset_name,
+                    "track_type": TRACK_TYPE_FREQUENCY,
+                    "loop_to_fit": True,
+                    "volume": preset_initial_vol,
+                }
+                new_track_id = self.app_state.add_track(
+                    source_info=source_info, initial_params=initial_params
+                )
+                if new_track_id:
                     st.success(
-                        f"'{preset_name}' track generated (ID: {new_track_id[:6]})!"
+                        f"'{preset_name}' track added (ID: {new_track_id[:6]}). Preview pending."
                     )
                     st.rerun()
-                elif audio_snippet is not None:
-                    st.warning("Generated preset snippet was empty.")
                 else:
-                    st.error("Failed to generate audio snippet for preset.")
+                    logger.error(f"Failed to add {preset_name} track state.")
+                    st.error(
+                        f"Failed to add track for {preset_name}. Limit might be reached."
+                    )
+            else:
+                logger.error(
+                    f"Could not determine source_info for preset: {preset_name}"
+                )
+                st.error(f"Internal error creating track for preset '{preset_name}'.")
+            # --- End of modification ---
 
     def _render_binaural_generator(self, disabled: bool = False):
+        # (UI Rendering remains the same)
         st.markdown(
             "<small>Generates stereo tones (requires headphones).</small>",
             unsafe_allow_html=True,
@@ -348,54 +338,59 @@ class SidebarGenerators:
             )
         beat_freq = abs(bb_fleft - bb_fright)
         st.caption(f"Resulting Beat Frequency: {beat_freq:.1f} Hz")
+
+        # --- MODIFIED: Generate Button Logic ---
         if st.button(
-            "Generate Binaural Track",
+            "➕ Add Binaural Track",
             key="sidebar_generate_bb",
-            help="Create track.",
+            help="Add track.",
             disabled=disabled,
         ):
             if not self._check_track_limit(adding_count=1):
                 return
-            with st.spinner("Generating Binaural Beats snippet..."):
-                audio_snippet = generate_binaural_beats(
-                    GENERATOR_SNIPPET_DURATION_S,
-                    bb_fleft,
-                    bb_fright,
-                    GLOBAL_SR,
-                    volume=1.0,
+
+            # --- REMOVED: Snippet generation ---
+            # with st.spinner("Generating Binaural Beats snippet..."):
+            #     audio_snippet = generate_binaural_beats(...)
+
+            # --- Create SourceInfo and add track state ---
+            logger.info(
+                f"Adding Binaural track state ({bb_fleft:.1f}Hz L / {bb_fright:.1f}Hz R)."
+            )
+            source_info: SourceInfoFrequency = {
+                "type": "frequency",
+                "freq_type": "binaural",
+                "f_left": bb_fleft,
+                "f_right": bb_fright,
+                "target_duration_s": bb_duration_req,
+                "freq": None,
+                "carrier": None,
+                "pulse": None,
+            }
+            default_name = f"Binaural {bb_fleft:.1f}Hz L / {bb_fright:.1f}Hz R ({beat_freq:.1f}Hz Beat)"
+            initial_params = {
+                "name": default_name,
+                "track_type": TRACK_TYPE_FREQUENCY,
+                "loop_to_fit": True,
+                "volume": bb_initial_vol,
+            }
+            new_track_id = self.app_state.add_track(
+                source_info=source_info, initial_params=initial_params
+            )
+            if new_track_id:
+                st.success(
+                    f"'{default_name}' added (ID: {new_track_id[:6]}). Preview pending."
                 )
-            if audio_snippet is not None and audio_snippet.size > 0:
-                source_info: SourceInfoFrequency = {
-                    "type": "frequency",
-                    "freq_type": "binaural",
-                    "f_left": bb_fleft,
-                    "f_right": bb_fright,
-                    "target_duration_s": bb_duration_req,
-                    "freq": None,
-                    "carrier": None,
-                    "pulse": None,
-                }
-                default_name = f"Binaural {bb_fleft:.1f}Hz L / {bb_fright:.1f}Hz R ({beat_freq:.1f}Hz Beat)"
-                initial_params = {
-                    "name": default_name,
-                    "track_type": TRACK_TYPE_FREQUENCY,
-                    "loop_to_fit": True,
-                    "volume": bb_initial_vol,
-                }
-                new_track_id = self.app_state.add_track(
-                    audio_snippet=audio_snippet,
-                    source_info=source_info,
-                    sr=GLOBAL_SR,
-                    initial_params=initial_params,
-                )
-                st.success(f"'{default_name}' generated (ID: {new_track_id[:6]})!")
                 st.rerun()
-            elif audio_snippet is not None:
-                st.warning("Generated binaural snippet was empty.")
             else:
-                st.error("Failed to generate binaural beats snippet.")
+                logger.error(f"Failed to add Binaural track state.")
+                st.error(
+                    f"Failed to add track for '{default_name}'. Limit might be reached."
+                )
+            # --- End of modification ---
 
     def _render_solfeggio_generator(self, disabled: bool = False):
+        # (UI Rendering remains the same)
         st.markdown(
             "<small>Generates pure tones based on Solfeggio frequencies.</small>",
             unsafe_allow_html=True,
@@ -434,50 +429,57 @@ class SidebarGenerators:
             help="Initial loudness.",
             disabled=disabled,
         )
+
+        # --- MODIFIED: Generate Button Logic ---
         if st.button(
-            "Generate Solfeggio Track",
+            "➕ Add Solfeggio Track",
             key="sidebar_generate_solf",
-            help="Create track.",
+            help="Add track.",
             disabled=disabled,
         ):
             if not self._check_track_limit(adding_count=1):
                 return
-            with st.spinner("Generating Solfeggio Tone snippet..."):
-                audio_snippet = generate_solfeggio_frequency(
-                    GENERATOR_SNIPPET_DURATION_S, freq, GLOBAL_SR, volume=1.0
+
+            # --- REMOVED: Snippet generation ---
+            # with st.spinner("Generating Solfeggio Tone snippet..."):
+            #     audio_snippet = generate_solfeggio_frequency(...)
+
+            # --- Create SourceInfo and add track state ---
+            logger.info(f"Adding Solfeggio {freq}Hz track state.")
+            source_info: SourceInfoFrequency = {
+                "type": "frequency",
+                "freq_type": "solfeggio",
+                "freq": freq,
+                "target_duration_s": duration_req,
+                "f_left": None,
+                "f_right": None,
+                "carrier": None,
+                "pulse": None,
+            }
+            default_name = f"Solfeggio {freq}Hz"
+            initial_params = {
+                "name": default_name,
+                "track_type": TRACK_TYPE_FREQUENCY,
+                "loop_to_fit": True,
+                "volume": initial_vol,
+            }
+            new_track_id = self.app_state.add_track(
+                source_info=source_info, initial_params=initial_params
+            )
+            if new_track_id:
+                st.success(
+                    f"'{default_name}' added (ID: {new_track_id[:6]}). Preview pending."
                 )
-            if audio_snippet is not None and audio_snippet.size > 0:
-                source_info: SourceInfoFrequency = {
-                    "type": "frequency",
-                    "freq_type": "solfeggio",
-                    "freq": freq,
-                    "target_duration_s": duration_req,
-                    "f_left": None,
-                    "f_right": None,
-                    "carrier": None,
-                    "pulse": None,
-                }
-                default_name = f"Solfeggio {freq}Hz"
-                initial_params = {
-                    "name": default_name,
-                    "track_type": TRACK_TYPE_FREQUENCY,
-                    "loop_to_fit": True,
-                    "volume": initial_vol,
-                }
-                new_track_id = self.app_state.add_track(
-                    audio_snippet=audio_snippet,
-                    source_info=source_info,
-                    sr=GLOBAL_SR,
-                    initial_params=initial_params,
-                )
-                st.success(f"'{default_name}' generated (ID: {new_track_id[:6]})!")
                 st.rerun()
-            elif audio_snippet is not None:
-                st.warning("Generated Solfeggio snippet was empty.")
             else:
-                st.error("Failed to generate Solfeggio tone snippet.")
+                logger.error(f"Failed to add Solfeggio track state.")
+                st.error(
+                    f"Failed to add track for '{default_name}'. Limit might be reached."
+                )
+            # --- End of modification ---
 
     def _render_isochronic_generator(self, disabled: bool = False):
+        # (UI Rendering remains the same)
         st.markdown(
             "<small>Generates rhythmic pulses of a single tone.</small>",
             unsafe_allow_html=True,
@@ -527,51 +529,53 @@ class SidebarGenerators:
                 help="Pulses per second.",
                 disabled=disabled,
             )
+
+        # --- MODIFIED: Generate Button Logic ---
         if st.button(
-            "Generate Isochronic Track",
+            "➕ Add Isochronic Track",
             key="sidebar_generate_iso",
-            help="Create track.",
+            help="Add track.",
             disabled=disabled,
         ):
             if not self._check_track_limit(adding_count=1):
                 return
-            with st.spinner("Generating Isochronic Tones snippet..."):
-                audio_snippet = generate_isochronic_tones(
-                    GENERATOR_SNIPPET_DURATION_S,
-                    iso_carrier,
-                    iso_pulse,
-                    GLOBAL_SR,
-                    volume=1.0,
+
+            # --- REMOVED: Snippet generation ---
+            # with st.spinner("Generating Isochronic Tones snippet..."):
+            #     audio_snippet = generate_isochronic_tones(...)
+
+            # --- Create SourceInfo and add track state ---
+            logger.info(
+                f"Adding Isochronic track state ({iso_carrier:.1f}Hz / {iso_pulse:.1f}Hz Pulse)."
+            )
+            source_info: SourceInfoFrequency = {
+                "type": "frequency",
+                "freq_type": "isochronic",
+                "carrier": iso_carrier,
+                "pulse": iso_pulse,
+                "target_duration_s": iso_duration_req,
+                "f_left": None,
+                "f_right": None,
+                "freq": None,
+            }
+            default_name = f"Isochronic {iso_carrier:.1f}Hz / {iso_pulse:.1f}Hz Pulse"
+            initial_params = {
+                "name": default_name,
+                "track_type": TRACK_TYPE_FREQUENCY,
+                "loop_to_fit": True,
+                "volume": iso_initial_vol,
+            }
+            new_track_id = self.app_state.add_track(
+                source_info=source_info, initial_params=initial_params
+            )
+            if new_track_id:
+                st.success(
+                    f"'{default_name}' added (ID: {new_track_id[:6]}). Preview pending."
                 )
-            if audio_snippet is not None and audio_snippet.size > 0:
-                source_info: SourceInfoFrequency = {
-                    "type": "frequency",
-                    "freq_type": "isochronic",
-                    "carrier": iso_carrier,
-                    "pulse": iso_pulse,
-                    "target_duration_s": iso_duration_req,
-                    "f_left": None,
-                    "f_right": None,
-                    "freq": None,
-                }
-                default_name = (
-                    f"Isochronic {iso_carrier:.1f}Hz / {iso_pulse:.1f}Hz Pulse"
-                )
-                initial_params = {
-                    "name": default_name,
-                    "track_type": TRACK_TYPE_FREQUENCY,
-                    "loop_to_fit": True,
-                    "volume": iso_initial_vol,
-                }
-                new_track_id = self.app_state.add_track(
-                    audio_snippet=audio_snippet,
-                    source_info=source_info,
-                    sr=GLOBAL_SR,
-                    initial_params=initial_params,
-                )
-                st.success(f"'{default_name}' generated (ID: {new_track_id[:6]})!")
                 st.rerun()
-            elif audio_snippet is not None:
-                st.warning("Generated Isochronic snippet was empty.")
             else:
-                st.error("Failed to generate Isochronic tones snippet.")
+                logger.error(f"Failed to add Isochronic track state.")
+                st.error(
+                    f"Failed to add track for '{default_name}'. Limit might be reached."
+                )
+            # --- End of modification ---

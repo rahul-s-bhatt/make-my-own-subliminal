@@ -2,7 +2,7 @@
 # ==========================================
 # MindMorph - Pro Subliminal Audio Editor
 # Main Application Entry Point (Router)
-# STEP 3 OPTIMIZED: Pass tts_generator to UIManager
+# ADDED: Google Analytics event tracking for workflow selection.
 # ==========================================
 
 import atexit
@@ -33,13 +33,28 @@ st.set_page_config(layout="wide", page_title="MindMorph - Subliminal Editor", pa
 logger.info(f"Theme preference set to: {selected_theme_name}")
 
 # --- Google Analytics ---
-if GA_MEASUREMENT_ID and GA_MEASUREMENT_ID != "YOUR_GA_MEASUREMENT_ID_HERE":
+# Ensure GA is enabled and ID is set
+GA_ENABLED = GA_MEASUREMENT_ID and GA_MEASUREMENT_ID != "YOUR_GA_MEASUREMENT_ID_HERE"
+if GA_ENABLED:
     google_analytics_code = f"""<script async src="https://www.googletagmanager.com/gtag/js?id={GA_MEASUREMENT_ID}"></script><script>window.dataLayer = window.dataLayer || []; function gtag(){{dataLayer.push(arguments);}} gtag('js', new Date()); gtag('config', '{GA_MEASUREMENT_ID}');</script>"""
+    # Inject the main GA script
     components.html(google_analytics_code, height=0)  # DON' REMOVE THIS LINE
     st.markdown(google_analytics_code, unsafe_allow_html=True)  # DON' REMOVE THIS LINE
-    logger.info(f"Injected Google Analytics tag.")
 else:
     logger.warning("Google Analytics Measurement ID is not set.")
+
+
+# Helper function to send GA events
+def send_ga_event(event_name: str, event_params: dict):
+    """Sends a Google Analytics event if GA is enabled."""
+    if GA_ENABLED:
+        event_js = f"""<script>if(typeof gtag === 'function') {{ gtag('event', '{event_name}', {event_params}); console.log("GA Event Sent: {event_name}", {event_params}); }} else {{ console.error('gtag function not found for event: {event_name}'); }}</script>"""
+        try:
+            components.html(event_js, height=0)
+        except Exception as e:
+            logger.error(f"Failed to inject GA event script for '{event_name}': {e}")
+    else:
+        logger.debug(f"GA Disabled: Event '{event_name}' not sent.")
 
 
 # --- Graceful Shutdown ---
@@ -47,7 +62,6 @@ def cleanup_resources():
     logger.info("-----------------------------------------------------")
     logger.info("Application shutting down. Performing cleanup...")
     logger.info("-----------------------------------------------------")
-    # Add specific cleanup tasks here if needed
     print("MindMorph cleanup finished.", flush=True)
 
 
@@ -68,6 +82,7 @@ except (ValueError, AttributeError):
 
 # --- Reset State Helper ---
 def reset_advanced_editor_state():
+    # (Function remains the same)
     logger.info("Resetting Advanced Editor state.")
     keys_to_delete = [
         "app_state",
@@ -81,13 +96,11 @@ def reset_advanced_editor_state():
         "export_buffer",
         "preview_audio_data",
         "selected_workflow",
-        # Expansion/Undo states
         "sidebar_expansion_result",
         "sidebar_expansion_truncated",
         "sidebar_affirm_original_text",
         "sidebar_affirm_text_pending_update",
         "sidebar_affirm_truncated_pending",
-        # Wizard states
         "wizard_step",
         "wizard_affirmation_text",
         "wizard_affirmation_audio",
@@ -110,7 +123,6 @@ def reset_advanced_editor_state():
         "wizard_original_affirmation_text",
         "wizard_affirm_text_pending_update",
         "wizard_affirm_truncated_pending",
-        # Processing flag
         "advanced_processing_active",
     ]
     for key in keys_to_delete:
@@ -139,32 +151,26 @@ def main():
         with col1:
             st.markdown("### ✨ Quick Create Wizard")
             st.markdown("- Simple, step-by-step process.\n- Use text or audio affirmations.\n- Optional background sounds/frequencies.\n- High-quality offline TTS (Piper).")
-            if st.button(
-                "Start Wizard",
-                key="start_wizard_button",
-                use_container_width=True,
-                type="primary",
-            ):
+            if st.button("Start Wizard", key="start_wizard_button", use_container_width=True, type="primary"):
+                # --- ADDED GA EVENT ---
+                send_ga_event("select_workflow", {"workflow": "wizard", "event_category": "engagement", "event_label": "wizard_selected"})
+                # --- END ADDED GA EVENT ---
                 st.session_state.selected_workflow = "wizard"
                 st.rerun()
         with col2:
             st.markdown("### 🎚️ Advanced Editor")
             st.markdown("- Full control with multiple tracks.\n- Fine-tune volume, speed, pitch, etc.\n- Advanced effects (ultrasonic shift).\n- Save/Load projects.")
-            if st.button(
-                "Open Advanced Editor",
-                key="start_advanced_button",
-                use_container_width=True,
-            ):
+            if st.button("Open Advanced Editor", key="start_advanced_button", use_container_width=True):
+                # --- ADDED GA EVENT ---
+                send_ga_event("select_workflow", {"workflow": "advanced", "event_category": "engagement", "event_label": "advanced_selected"})
+                # --- END ADDED GA EVENT ---
                 st.session_state.selected_workflow = "advanced"
                 if "app_mode" not in st.session_state:
                     st.session_state.app_mode = "Easy"
                 st.rerun()
         st.markdown("---")
-        # Patreon Button
-        st.markdown(
-            '<div style="text-align: center;"><h4>❤️ Support MindMorph</h4><p>Consider supporting development on Patreon.</p></div>',
-            unsafe_allow_html=True,
-        )
+        # Patreon Button (remains the same)
+        st.markdown('<div style="text-align: center;"><h4>❤️ Support MindMorph</h4><p>Consider supporting development on Patreon.</p></div>', unsafe_allow_html=True)
         if PATERON_URL and PATERON_URL != "YOUR_PATERON_URL_HERE":
             st.markdown(
                 f'<div style="text-align: center; margin-top: 10px; margin-bottom: 10px;"><a href="{PATERON_URL}" target="_blank"><button style="padding: 10px 20px; background-color: #f0f2f6; color: #31333F; border: 1px solid #ced4da; border-radius: 0.25rem; cursor: pointer; font-weight: bold;">💖 Join Patreon</button></a></div>',
@@ -176,11 +182,12 @@ def main():
 
     # --- Run Quick Wizard ---
     elif st.session_state.selected_workflow == "wizard":
+        # (Wizard logic remains the same)
         logger.info("Running Quick Create Wizard workflow.")
         try:
             from wizard_steps.quick_wizard import QuickWizard
 
-            wizard = QuickWizard()  # Handles its own TTS setup
+            wizard = QuickWizard()
             wizard.render_wizard()
         except ImportError as e_import:
             logger.exception("Failed to import Quick Wizard components.")
@@ -197,39 +204,29 @@ def main():
 
     # --- Run Advanced Editor ---
     elif st.session_state.selected_workflow == "advanced":
+        # (Advanced Editor logic remains the same)
         logger.info("Running Advanced Editor workflow.")
         try:
-            # Import necessary components
             from app_state import AppState
             from project_handler import ProjectHandler
             from tts.piper_tts import PiperTTSGenerator
-            from ui_manager import UIManager  # Import UIManager
+            from ui_manager import UIManager
 
-            # Initialize Core Components
             if "app_state" not in st.session_state:
                 st.session_state.app_state = AppState()
             if "tts_generator" not in st.session_state:
                 logger.info("Initializing PiperTTSGenerator for Advanced Editor.")
                 try:
                     st.session_state.tts_generator = PiperTTSGenerator()
-                    logger.info("PiperTTSGenerator initialized for Advanced Editor.")
                 except Exception as e_tts:
                     logger.exception("Failed to initialize PiperTTSGenerator.")
-                    st.error(f"TTS Engine Error: {e_tts}. Check model paths.", icon="🗣️")
-                    st.session_state.tts_generator = None  # Indicate TTS unavailable
-
+                    st.error(f"TTS Engine Error: {e_tts}.", icon="🗣️")
+                    st.session_state.tts_generator = None
             if "project_handler" not in st.session_state:
                 st.session_state.project_handler = ProjectHandler(st.session_state.app_state)
-
-            # --- MODIFIED: Pass tts_generator to UIManager ---
             if "ui_manager" not in st.session_state:
-                st.session_state.ui_manager = UIManager(
-                    app_state=st.session_state.app_state,
-                    tts_generator=st.session_state.get("tts_generator"),  # Pass the generator instance (can be None)
-                )
-            # --- End Modification ---
+                st.session_state.ui_manager = UIManager(app_state=st.session_state.app_state, tts_generator=st.session_state.get("tts_generator"))
 
-            # Render Top Bar
             st.title("🧠 MindMorph - Advanced Editor")
             header_cols = st.columns([4, 1])
             with header_cols[0]:
@@ -241,30 +238,17 @@ def main():
                 except ValueError:
                     current_mode_index = 0
                     st.session_state.app_mode = "Easy"
-                selected_mode = st.radio(
-                    "Editor Mode:",
-                    options=mode_options,
-                    index=current_mode_index,
-                    key="mode_selector_radio",
-                    horizontal=True,
-                )
+                selected_mode = st.radio("Editor Mode:", options=mode_options, index=current_mode_index, key="mode_selector_radio", horizontal=True)
                 st.caption("Easy mode simplifies; Advanced shows all controls.")
                 if selected_mode != st.session_state.app_mode:
                     logger.info(f"Advanced editor mode changed to '{selected_mode}'")
                     st.session_state.app_mode = selected_mode
                     st.rerun()
             with header_cols[1]:
-                if st.button(
-                    "🏠 Back to Home",
-                    key="advanced_back_home",
-                    help="Exit Advanced Editor.",
-                    use_container_width=True,
-                ):
+                if st.button("🏠 Back to Home", key="advanced_back_home", help="Exit Advanced Editor.", use_container_width=True):
                     reset_advanced_editor_state()
                     st.rerun()
             st.markdown("---")
-
-            # Render Main UI using UIManager
             st.session_state.ui_manager.render_ui(mode=st.session_state.app_mode)
 
         except ImportError as e_import:
@@ -303,7 +287,4 @@ if __name__ == "__main__":
                 st.rerun()
         except Exception as display_error:
             print(f"CRITICAL ERROR: {e}", file=sys.stderr)
-            print(
-                f"Could not display error in Streamlit: {display_error}",
-                file=sys.stderr,
-            )
+            print(f"Could not display error in Streamlit: {display_error}", file=sys.stderr)

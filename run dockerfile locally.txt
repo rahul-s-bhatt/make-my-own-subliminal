@@ -1,0 +1,18 @@
+docker build -t mindmorph .
+docker run -d -p 8501:8501 --name mindmorph-container mindmorph
+
+
+docker exec -it mindmorph-container /bin/bash
+
+apt-get update && apt-get install -y procps
+
+ps aux | grep "streamlit run main.py" | grep -v grep
+
+mprof run --attach 1 -o /app/memory_profile.dat
+
+docker cp mindmorph-container:/app/memory_profile.dat ./memory_profile.dat
+
+
+memory-profiler
+
+PyQt5

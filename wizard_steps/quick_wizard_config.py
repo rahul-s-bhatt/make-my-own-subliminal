@@ -9,15 +9,11 @@
 # General
 WIZARD_STEP_KEY = "wizard_step"
 WIZARD_PROCESSING_ACTIVE_KEY = "wizard_processing_active"  # For final export
-WIZARD_PREVIEW_ACTIVE_KEY = (
-    "wizard_preview_active"  # For preview generation <--- NEW KEY
-)
+WIZARD_PREVIEW_ACTIVE_KEY = "wizard_preview_active"  # For preview generation <--- NEW KEY
 
 # Step 1: Affirmations
 AFFIRMATION_TEXT_KEY = "wizard_affirmation_text"
-AFFIRMATION_SOURCE_KEY = (
-    "wizard_affirmation_source"  # Though currently hardcoded to 'text'
-)
+AFFIRMATION_SOURCE_KEY = "wizard_affirmation_source"  # Though currently hardcoded to 'text'
 AFFIRM_APPLY_SPEED_KEY = "wizard_apply_speed_change"  # Boolean flag for speed change
 AFFIRMATION_VOLUME_KEY = "wizard_affirmation_volume"
 
@@ -29,9 +25,7 @@ BG_NOISE_TYPE_KEY = "wizard_background_noise_type"  # String name of noise
 BG_VOLUME_KEY = "wizard_background_volume"
 
 # Step 3: Frequency
-FREQ_CHOICE_KEY = (
-    "wizard_frequency_choice"  # 'None', 'Binaural Beats', 'Isochronic Tones'
-)
+FREQ_CHOICE_KEY = "wizard_frequency_choice"  # 'None', 'Binaural Beats', 'Isochronic Tones'
 FREQ_PARAMS_KEY = "wizard_frequency_params"  # Dict storing parameters
 FREQ_VOLUME_KEY = "wizard_frequency_volume"
 
@@ -84,3 +78,15 @@ EXPORT_FORMATS = ["WAV", "MP3"]  # MP3 availability checked elsewhere
 DEFAULT_BASE_FREQ = 100.0
 DEFAULT_BEAT_FREQ = 5.0  # For Binaural
 DEFAULT_PULSE_FREQ = 7.0  # For Isochronic
+
+# Widget key for the main affirmation text area in the wizard
+WIZARD_AFFIRM_TEXT_AREA_WIDGET_KEY = "wizard_affirm_text_area_widget"  # Or reuse "wizard_affirm_text_area" if it's just the widget key
+
+# Keys for wizard affirmation expansion logic
+WIZARD_AFFIRM_ORIGINAL_TEXT_KEY = "wizard_affirm_original_text_for_expansion"
+WIZARD_EXPANSION_RESULT_TEXT_KEY = "wizard_expansion_result_text"
+WIZARD_EXPANSION_WAS_TRUNCATED_KEY = "wizard_expansion_was_truncated"
+
+# Keys for pending updates to the main affirmation text area after expansion interaction
+WIZARD_PENDING_AFFIRMATION_TEXT_UPDATE_KEY = "wizard_pending_affirmation_text_update"
+WIZARD_PENDING_UPDATE_WAS_TRUNCATED_KEY = "wizard_pending_update_was_truncated"

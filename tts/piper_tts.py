@@ -79,68 +79,122 @@ class PiperTTSGenerator(BaseTTSGenerator):
                 f"Resampling from {self.model_native_sr}Hz to {self.target_sr}Hz will be required."
             )
 
-    def _synthesize_chunk(self, text_chunk: str) -> bytes:
-        """Synthesizes a single text chunk into WAV bytes."""
-        if not self.voice:
-            raise RuntimeError("Piper voice model is not loaded.")
-        audio_buffer = BytesIO()
+# --- MODIFIED: Cached Synthesis Function ---
+@st.cache_data(show_spinner=False)
+def _cached_piper_synthesize(
+    _voice: PiperVoice, text_chunk: str, target_sr: int, model_native_sr: int
+) -> Tuple[AudioData, SampleRate]:
+    """
+    Synthesizes a single text chunk using the provided voice model.
+    Cached based on text chunk, target SR, and model native SR.
+    Note: _voice is unhashable, so we prefix with _ to exclude from cache hashing.
+          Streamlit will rely on the other arguments for cache invalidation.
+          This assumes the voice model instance doesn't change for the same text/sr.
+    """
+    if not _voice:
+        return np.zeros((0, 2), dtype=np.float32), target_sr
+
+    audio_buffer = BytesIO()
+    try:
+        with wave.open(audio_buffer, "wb") as wav_file:
+            _voice.synthesize(text_chunk, wav_file)
+        wav_bytes = audio_buffer.getvalue()
+    except Exception as e:
+        logger.exception(f"Piper synthesis failed for chunk: '{text_chunk[:50]}...'")
+        return np.zeros((0, 2), dtype=np.float32), target_sr
+    finally:
+        audio_buffer.close()
+
+    if not wav_bytes:
+        return np.zeros((0, 2), dtype=np.float32), target_sr
+
+    # Process WAV bytes (logic extracted from original _process_wav_bytes)
+    try:
+        with BytesIO(wav_bytes) as bio, wave.open(bio, "rb") as wf:
+            n_channels, sampwidth, framerate, n_frames = wf.getparams()[:4]
+            if n_frames == 0:
+                return np.zeros((0, 2), dtype=np.float32), framerate
+            audio_frames = wf.readframes(n_frames)
+
+        dtype_map = {1: np.int8, 2: np.int16, 4: np.int32}
+        if sampwidth not in dtype_map:
+            raise ValueError(f"Unsupported sample width: {sampwidth}")
+        np_dtype = dtype_map[sampwidth]
+        audio_int = np.frombuffer(audio_frames, dtype=np_dtype)
+        if n_channels > 1:
+            audio_int = audio_int.reshape(-1, n_channels)
+
+        # Convert to float32
+        norm_factor = {
+            np.int8: 128.0,
+            np.int16: 32768.0,
+            np.int32: 2147483648.0,
+        }.get(np_dtype, 1.0)
+        audio_float = audio_int.astype(np.float32) / norm_factor
+
+        # Ensure stereo float32
+        if audio_float.ndim == 1:
+            audio_stereo = np.stack([audio_float, audio_float], axis=-1)
+        elif audio_float.shape[1] == 1:
+            audio_stereo = np.concatenate([audio_float, audio_float], axis=1)
+        elif audio_float.shape[1] == 2:
+            audio_stereo = audio_float
+        else:  # More than 2 channels
+            audio_stereo = audio_float[:, :2]
+
+        chunk_audio_native = audio_stereo.astype(np.float32)
+        actual_native_sr = framerate
+
+    except Exception as e:
+        logger.exception("Failed to process WAV bytes in cached function.")
+        return np.zeros((0, 2), dtype=np.float32), target_sr
+
+    # Resample if necessary
+    if actual_native_sr != target_sr:
         try:
-            with wave.open(audio_buffer, "wb") as wav_file:
-                self.voice.synthesize(text_chunk, wav_file)
-            return audio_buffer.getvalue()
-        except Exception as e:
-            logger.exception(
-                f"Piper synthesis failed for chunk: '{text_chunk[:50]}...'"
+            chunk_audio_native_float = chunk_audio_native.astype(np.float32)
+            resampled_audio = librosa.resample(
+                chunk_audio_native_float.T,
+                orig_sr=actual_native_sr,
+                target_sr=target_sr,
+            ).T
+            return resampled_audio.astype(np.float32), target_sr
+        except Exception as e_resample:
+            logger.exception("Failed to resample cached chunk.")
+            return np.zeros((0, 2), dtype=np.float32), target_sr
+    else:
+        return chunk_audio_native, actual_native_sr
+
+
+class PiperTTSGenerator(BaseTTSGenerator):
+    """
+    TTS Generator using the Piper TTS engine.
+    Handles chunking, synthesis, resampling, and optional duration limiting.
+    """
+
+    def __init__(
+        self,
+        model_path: str = PIPER_VOICE_MODEL_PATH,
+        config_path: str = PIPER_VOICE_CONFIG_PATH,
+        chunk_size: int = TTS_CHUNK_SIZE,
+        target_sr: int = GLOBAL_SR,
+    ):
+        """Initializes the PiperTTSGenerator."""
+        logger.info(f"Initializing PiperTTSGenerator...")
+        self.chunk_size = chunk_size
+        self.target_sr = target_sr
+        self.voice = _load_piper_voice(model_path, config_path)
+        self.model_native_sr = getattr(
+            getattr(self.voice, "config", None), "sample_rate", 22050
+        )
+        logger.info(f"Piper model native sample rate: {self.model_native_sr} Hz")
+        if self.model_native_sr != self.target_sr:
+            logger.info(
+                f"Resampling from {self.model_native_sr}Hz to {self.target_sr}Hz will be required."
             )
-            return b""
-        finally:
-            audio_buffer.close()
 
-    def _process_wav_bytes(self, wav_bytes: bytes) -> Tuple[AudioData, SampleRate]:
-        """Processes raw WAV bytes: reads, converts to float32 stereo."""
-        if not wav_bytes:
-            return np.zeros((0, 2), dtype=np.float32), self.model_native_sr
-        audio_int, audio_float, audio_stereo = None, None, None
-        try:
-            with BytesIO(wav_bytes) as bio, wave.open(bio, "rb") as wf:
-                n_channels, sampwidth, framerate, n_frames = wf.getparams()[:4]
-                if n_frames == 0:
-                    return np.zeros((0, 2), dtype=np.float32), framerate
-                audio_frames = wf.readframes(n_frames)
-
-            dtype_map = {1: np.int8, 2: np.int16, 4: np.int32}
-            if sampwidth not in dtype_map:
-                raise ValueError(f"Unsupported sample width: {sampwidth}")
-            np_dtype = dtype_map[sampwidth]
-            audio_int = np.frombuffer(audio_frames, dtype=np_dtype)
-            if n_channels > 1:
-                audio_int = audio_int.reshape(-1, n_channels)
-
-            # Convert to float32
-            norm_factor = {
-                np.int8: 128.0,
-                np.int16: 32768.0,
-                np.int32: 2147483648.0,
-            }.get(np_dtype, 1.0)
-            audio_float = audio_int.astype(np.float32) / norm_factor
-
-            # Ensure stereo float32
-            if audio_float.ndim == 1:
-                audio_stereo = np.stack([audio_float, audio_float], axis=-1)
-            elif audio_float.shape[1] == 1:
-                audio_stereo = np.concatenate([audio_float, audio_float], axis=1)
-            elif audio_float.shape[1] == 2:
-                audio_stereo = audio_float
-            else:  # More than 2 channels
-                audio_stereo = audio_float[:, :2]
-
-            return audio_stereo.astype(np.float32), framerate
-        except Exception as e:
-            logger.exception("Failed to process WAV bytes.")
-            return np.zeros((0, 2), dtype=np.float32), self.model_native_sr
-        finally:
-            del audio_int, audio_float, audio_stereo
-            # gc.collect() # Optional: more aggressive garbage collection
+    # _synthesize_chunk and _process_wav_bytes are replaced by _cached_piper_synthesize
+    # We can remove them or keep them if needed for non-cached fallback, but for now we use the cached one.
 
     # --- MODIFIED: Added max_duration_s parameter ---
     def generate(
@@ -188,64 +242,16 @@ class PiperTTSGenerator(BaseTTSGenerator):
                 )
                 chunk_start_time = time.time()
 
-                wav_bytes = self._synthesize_chunk(chunk_text)
-                if not wav_bytes:
-                    logger.warning(
-                        f"Synthesize chunk {chunk_index} returned empty bytes."
-                    )
-                    continue
-
-                chunk_audio_native, native_sr = self._process_wav_bytes(wav_bytes)
-                del wav_bytes
-                gc.collect()
-
-                if chunk_audio_native.size == 0:
-                    logger.warning(
-                        f"Processing WAV bytes for chunk {chunk_index} resulted in empty audio."
-                    )
-                    continue
-
-                actual_native_sr = native_sr
-                if actual_native_sr != self.model_native_sr:
-                    logger.warning(
-                        f"Chunk {chunk_index} actual native SR {actual_native_sr} differs from expected model SR {self.model_native_sr}."
-                    )
-
-                # --- Resample if necessary ---
-                chunk_audio_processed: Optional[np.ndarray] = None
-                current_chunk_target_sr = self.target_sr
-                if actual_native_sr != self.target_sr:
-                    logger.debug(
-                        f"[PiperTTS] Resampling chunk {chunk_index} from {actual_native_sr} Hz to {self.target_sr} Hz."
-                    )
-                    try:
-                        chunk_audio_native_float = chunk_audio_native.astype(np.float32)
-                        resampled_audio = librosa.resample(
-                            chunk_audio_native_float.T,
-                            orig_sr=actual_native_sr,
-                            target_sr=self.target_sr,
-                        ).T
-                        chunk_audio_processed = resampled_audio.astype(np.float32)
-                        del chunk_audio_native
-                        gc.collect()
-                    except Exception as e_resample:
-                        logger.exception(
-                            f"Failed to resample chunk {chunk_index}. Skipping chunk."
-                        )
-                        del chunk_audio_native
-                        gc.collect()
-                        continue
-                else:
-                    chunk_audio_processed = chunk_audio_native.astype(np.float32)
-                    current_chunk_target_sr = (
-                        actual_native_sr  # Use the native SR if no resampling occurred
-                    )
-                # --- End Resampling ---
+                # --- USE CACHED FUNCTION ---
+                chunk_audio_processed, chunk_sr = _cached_piper_synthesize(
+                    self.voice, chunk_text, self.target_sr, self.model_native_sr
+                )
+                # ---------------------------
 
                 if chunk_audio_processed is not None and chunk_audio_processed.size > 0:
                     processed_chunks.append(chunk_audio_processed)
                     chunk_duration_s = (
-                        chunk_audio_processed.shape[0] / current_chunk_target_sr
+                        chunk_audio_processed.shape[0] / chunk_sr
                     )
                     total_processed_duration_s += chunk_duration_s
                     logger.debug(
@@ -271,8 +277,7 @@ class PiperTTSGenerator(BaseTTSGenerator):
                 logger.info(
                     f"[PiperTTS] Processed chunk {chunk_index} in {chunk_end_time - chunk_start_time:.2f}s."
                 )
-                del chunk_audio_processed
-                gc.collect()
+                # gc.collect() # Optional
 
             synthesis_end_time = time.time()
             logger.info(

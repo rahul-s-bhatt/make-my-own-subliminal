@@ -1,0 +1,11 @@
+Couple of things before (or in mid way / after) you have implemented things, we want things to be streamlined throughout the application:
+
+1. We use config.py or app_state.py to maintain the state and configurations as centralized things.
+2. We can create & use <feature>_config.py file if we some common configs relevant to the feature.
+3. We must remember to create a subliminal audio, we have to adhere to these things:
+  - The background noise/music if smaller than affirmations must be looped till end.
+  - The topic that user selects for auto_subliminal needs use the expand_affirmations internally (use affirmation_expander.py).
+  - before exporting the end result, doc/file containing the affirmations and raw audio, we definitely want a 10s preview audio like always. 
+4. We have to extreme memory efficient that is once things are download/exported we go back to home page and removed things from in memory.
+
+I m giving you the main.py, config.py, app_state.py & affirmation_expander.py  for understanding & implementing the same, please?
